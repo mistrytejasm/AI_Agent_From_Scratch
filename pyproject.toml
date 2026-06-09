@@ -1,0 +1,17 @@
+[project]
+name = "ai-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "pymongo[srv]>=3.12",
+    "groq",
+    "motor",
+    "pydantic",
+    "pydantic-settings",
+    "python-dotenv",
+    "rich",
+    "tenacity",
+]
+

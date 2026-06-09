@@ -1,0 +1,7 @@
+groq
+motor
+pydantic
+pydantic-settings
+python-dotenv
+rich
+tenacity
