@@ -7,7 +7,6 @@ from memory.base import BaseMemory
 
 class MongoDBChatHistory(BaseMemory):
     def __init__(self):
-        # Access database collections through connection manager
         self.sessions_col = db_client.db["sessions"]
         self.messages_col = db_client.db["messages"]
 
@@ -28,20 +27,22 @@ class MongoDBChatHistory(BaseMemory):
         return sessions
 
     async def add_message(self, session_id: str, role: str, content: str, **kwargs) -> None:
-        """Stores a new message in MongoDB and updates parent session timestamp."""
+        """Stores a new message (including tool calls and tool IDs if present) in MongoDB."""
         obj_session_id = ObjectId(session_id)
 
         message = MessageModel(
             session_id=session_id,
             role=role,
             content=content,
+            tool_calls=kwargs.get("tool_calls"),
+            tool_call_id=kwargs.get("tool_call_id"),
             timestamp=datetime.now(timezone.utc),
             token_count=kwargs.get("token_count"),
             metadata=kwargs.get("metadata", {})
         )
 
         message_dict = message.model_dump(by_alias=True, exclude_none=True)
-        message_dict["session_id"] = obj_session_id # Cast string to BSON ObjectId
+        message_dict["session_id"] = obj_session_id
 
         # Save the message document
         await self.messages_col.insert_one(message_dict)
@@ -53,27 +54,30 @@ class MongoDBChatHistory(BaseMemory):
         )
 
     async def get_messages(self, session_id: str, **kwargs) -> List[Dict[str, Any]]:
-        """Loads all messages for a session sorted in ascending chronological order."""
+        """Loads all messages for a session, retaining tool metadata fields for the LLM."""
         obj_session_id = ObjectId(session_id)
         cursor = self.messages_col.find({"session_id": obj_session_id}).sort("timestamp", 1)
 
         messages = []
         async for doc in cursor:
-            messages.append({
+            msg_dict = {
                 "role": doc["role"],
-                "content": doc["content"]
-            })
+                "content": doc.get("content")
+            }
+            # Forward tool metadata if present
+            if "tool_calls" in doc:
+                msg_dict["tool_calls"] = doc["tool_calls"]
+            if "tool_call_id" in doc:
+                msg_dict["tool_call_id"] = doc["tool_call_id"]
+            messages.append(msg_dict)
         return messages
 
-
-    async def clear(self, session_id: str) ->  None:
+    async def clear(self, session_id: str) -> None:
         """Deletes all messages associated with the specified session."""
         obj_session_id = ObjectId(session_id)
         await self.messages_col.delete_many({"session_id": obj_session_id})
         
-        # Update session's updated_at timestamp
         await self.sessions_col.update_one(
             {"_id": obj_session_id},
             {"$set": {"updated_at": datetime.now(timezone.utc)}}
         )
-

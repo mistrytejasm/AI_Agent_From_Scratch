@@ -1,4 +1,3 @@
-from ast import alias
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
@@ -11,12 +10,17 @@ class Settings(BaseSettings):
     mongodb_uri: str = Field(..., alias="MONGODB_URI")
     mongodb_db_name: str = Field("chatbot_db", alias="MONGODB_DB_NAME")
 
+    # Tavily Search Configuration
+    tavily_api_key: str = Field(..., alias="TAVILY_API_KEY")
+
+    # Memory Configuration
+    max_messages: int = Field(5, alias="MAX_MESSAGES")
+
     # Configuration to load from the .env file in the project root
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        extra="ignore" # Ignore other environment variables not specified here
+        extra="ignore"
     )
 
-# Singleton instance of settings to import across modules
 settings = Settings()
