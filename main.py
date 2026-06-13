@@ -1,4 +1,5 @@
 import asyncio
+import json
 from datetime import datetime, timezone
 from rich.console import Console
 from rich.panel import Panel
@@ -7,10 +8,14 @@ from rich.text import Text
 from rich.live import Live
 
 from database.connection import db_client
+from config.settings import settings
 from memory.mongo_history import MongoDBChatHistory
 from memory.short_term import ShortTermMemory
 from llm.groq_provider import GroqProvider
 from agent.simple_agent import SimpleAgent
+
+# Crucial: Import the tools package to load all decorators and register functions
+import tools
 
 console = Console()
 
@@ -27,7 +32,6 @@ async def get_or_create_session(db_history: MongoDBChatHistory) -> str:
         
         console.print("\n[bold green]Available Chat Sessions:[/bold green]")
         for idx, s in enumerate(sessions, 1):
-            # Format update timestamp
             updated_str = s.get("updated_at", datetime.now(timezone.utc)).strftime("%Y-%m-%d %H:%M:%S")
             console.print(f"{idx}. {s['title']} [dim](<Last active: {updated_str}>)[/dim] - ID: {s['_id']}")
             
@@ -37,7 +41,6 @@ async def get_or_create_session(db_history: MongoDBChatHistory) -> str:
         console.print(f"[green]Loaded session: [bold]{selected_session['title']}[/bold][/green]\n")
         return selected_session["_id"]
     
-    # Default: Start a new session
     title = Prompt.ask("Enter conversation title", default="New Conversation")
     session_id = await db_history.create_session(title)
     console.print(f"[green]Created new session: [bold]{title}[/bold] (ID: {session_id})[/green]\n")
@@ -48,15 +51,15 @@ async def run_cli():
     db_client.connect()
     
     console.print(Panel(
-        "[bold magenta]Scalable Python AI Chatbot[/bold magenta]\n"
-        "Powered by Groq LLM & MongoDB Atlas with async streaming.",
+        "[bold magenta]Scalable Python AI Agent[/bold magenta]\n"
+        "Equipped with 6 tools: Calculator, Tavily Search, File IO, System Clock.",
         title="Welcome",
-        subtitle="v1.0.0"
+        subtitle="v2.0.0"
     ))
     
     # Initialize components
     db_history = MongoDBChatHistory()
-    short_memory = ShortTermMemory(storage=db_history, max_messages=20)
+    short_memory = ShortTermMemory(storage=db_history, max_messages=settings.max_messages)
     groq_llm = GroqProvider()
     agent = SimpleAgent(llm=groq_llm, memory=short_memory)
     
@@ -71,6 +74,9 @@ async def run_cli():
     if past_messages:
         console.print("[bold dim]--- Loaded History ---[/bold dim]")
         for msg in past_messages:
+            # Skip displaying internal tool calls/results in CLI history
+            if msg["role"] == "tool" or msg.get("tool_calls"):
+                continue
             role_color = "bold cyan" if msg["role"] == "user" else "bold green"
             console.print(f"[{role_color}]{msg['role'].capitalize()}:[/{role_color}] {msg['content']}")
         console.print("[bold dim]------------------------[/bold dim]\n")
@@ -91,17 +97,40 @@ async def run_cli():
                 console.print("[red]Cleared history for this session.[/red]\n")
                 continue
                 
-            # Setup visual streaming
-            console.print("[bold green]Assistant:[/bold green] ", end="")
+            console.print("[bold green]Assistant:[/bold green]")
             
             response_text = ""
-            # Live class dynamically refreshes the terminal screen with streamed content
-            with Live(Text(""), refresh_per_second=15, console=console) as live:
-                async for token in agent.run_stream(session_id, user_input):
+            live = None
+            
+            async for token in agent.run_stream(session_id, user_input):
+                if token.startswith("__TOOL_CALL__"):
+                    # If we have an active typewriter text stream open, stop it
+                    if live:
+                        live.stop()
+                        live = None
+                    
+                    # Parse the tool name and JSON string arguments
+                    _, tool_name, args_str = token.split(":", 2)
+                    try:
+                        args = json.loads(args_str)
+                        args_fmt = ", ".join(f"{k}={json.dumps(v)}" for k, v in args.items())
+                    except Exception:
+                        args_fmt = args_str
+                        
+                    console.print(f"  [bold yellow]🔧 Running tool: [cyan]{tool_name}({args_fmt})[/cyan]...[/bold yellow]")
+                else:
+                    # Standard text response - open a typewriter stream if not active
+                    if not live:
+                        response_text = ""
+                        live = Live(Text(""), refresh_per_second=15, console=console)
+                        live.start()
+                        
                     response_text += token
                     live.update(Text(response_text))
             
-            console.print()  # Add trailing new line
+            if live:
+                live.stop()
+            console.print()  # Add final blank line
             
         except KeyboardInterrupt:
             console.print("\n[yellow]Interrupted by user. Exiting...[/yellow]")
@@ -116,4 +145,4 @@ def main():
     asyncio.run(run_cli())
 
 if __name__ == "__main__":
-    main()
+    main()
