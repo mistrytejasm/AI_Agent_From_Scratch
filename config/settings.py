@@ -16,6 +16,15 @@ class Settings(BaseSettings):
     # Memory Configuration
     max_messages: int = Field(5, alias="MAX_MESSAGES")
 
+    # Local LLM Configuration
+    local_llm_base_url: str = Field("http://localhost/v1", alias="LOCAL_LLM_BASE_URL")
+    local_llm_api_key: str = Field("my-local-secret-key-2026", alias="LOCAL_LLM_API_KEY")
+    local_llm_model: str = Field("qwen3.5-4b", alias="LOCAL_LLM_MODEL")
+    use_local_llm: bool = Field(False, alias="USE_LOCAL_LLM")
+
+    # Embedding Configuration
+    embedding_model_name: str = Field("all-MiniLM-L6-v2", alias="EMBEDDING_MODEL_NAME")
+
     # Configuration to load from the .env file in the project root
     model_config = SettingsConfigDict(
         env_file=".env",

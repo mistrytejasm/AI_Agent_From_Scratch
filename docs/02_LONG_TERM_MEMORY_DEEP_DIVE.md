@@ -1,5 +1,9 @@
 # Long-Term Memory in Production AI Agents — Deep Dive
 
+> **Document Version:** 1.0.0
+> **Last Updated:** June 20, 2026
+> **Author:** TejasH MistrY
+
 > **Engineering Reference Document** — A comprehensive analysis of how production-grade AI assistants (ChatGPT, Claude, Perplexity) and modern agent frameworks design, implement, and manage long-term memory systems. Written to inform the architectural design of our AI Agent project's Phase 4.
 
 ---
