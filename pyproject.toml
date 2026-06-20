@@ -13,5 +13,8 @@ dependencies = [
     "python-dotenv",
     "rich",
     "tenacity",
+    "sentence-transformers>=5.5.1",
+    "openai",
+    "tavily-python",
 ]
 

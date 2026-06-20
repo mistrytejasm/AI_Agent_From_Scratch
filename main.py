@@ -6,6 +6,7 @@ from rich.panel import Panel
 from rich.prompt import Prompt, IntPrompt
 from rich.text import Text
 from rich.live import Live
+from rich.table import Table
 
 from database.connection import db_client
 from config.settings import settings
@@ -13,6 +14,7 @@ from memory.mongo_history import MongoDBChatHistory
 from memory.short_term import ShortTermMemory
 from llm.groq_provider import GroqProvider
 from agent.simple_agent import SimpleAgent
+from memory.consolidator import MemoryConsolidator
 
 # Crucial: Import the tools package to load all decorators and register functions
 import tools
@@ -22,7 +24,7 @@ console = Console()
 async def get_or_create_session(db_history: MongoDBChatHistory) -> str:
     """Prompts the user to select an existing chat session or start a new one."""
     console.print(Panel("[bold cyan]Session Manager[/bold cyan]\n1. Start a New Conversation\n2. Load an Existing Conversation"))
-    choice = IntPrompt.ask("Choose an option", choices=["1", "2"], default=1)
+    choice = IntPrompt.ask("Choose an option", choices=[1, 2], default=1)
     
     if choice == 2:
         sessions = await db_history.get_all_sessions()
@@ -52,29 +54,45 @@ async def run_cli():
     
     console.print(Panel(
         "[bold magenta]Scalable Python AI Agent[/bold magenta]\n"
-        "Equipped with 6 tools: Calculator, Tavily Search, File IO, System Clock.",
+        "Equipped with Long-Term Memory, Vector Search, and local Embeddings.",
         title="Welcome",
-        subtitle="v2.0.0"
+        subtitle="v2.1.0"
     ))
     
     # Initialize components
     db_history = MongoDBChatHistory()
     short_memory = ShortTermMemory(storage=db_history, max_messages=settings.max_messages)
     groq_llm = GroqProvider()
-    agent = SimpleAgent(llm=groq_llm, memory=short_memory)
+    
+    if settings.use_local_llm:
+        from llm.local_openai import LocalOpenAIProvider
+        from llm.fallback_provider import FallbackLLMProvider
+        local_llm = LocalOpenAIProvider()
+        llm = FallbackLLMProvider(primary=local_llm, fallback=groq_llm)
+    else:
+        llm = groq_llm
+        
+    agent = SimpleAgent(llm=llm, memory=short_memory)
+    consolidator = MemoryConsolidator(llm_provider=llm)
     
     # Load or create conversation session
     session_id = await get_or_create_session(db_history)
     
-    # Help Commands
-    console.print("[dim]Commands: type [/dim][bold red]/exit[/bold red][dim] to quit, [/dim][bold yellow]/clear[/bold yellow][dim] to clear history for this session.[/dim]\n")
+    # Help Commands Console Info
+    console.print(
+        "[bold yellow]Available Commands:[/bold yellow]\n"
+        "  [bold red]/exit[/bold red] [dim]........ Exit chat & save session summary[/dim]\n"
+        "  [bold yellow]/clear[/bold yellow] [dim]....... Clear chat history for this session[/dim]\n"
+        "  [bold cyan]/memories[/bold cyan] [dim].... List all stored active long-term memories[/dim]\n"
+        "  [bold magenta]/forget [topic][/bold magenta] [dim]Delete memories matching a topic (or use --all)[/dim]\n"
+        "  [bold blue]/consolidate[/bold blue] [dim].. Manually trigger memory consolidation/cleanup[/dim]\n"
+    )
     
     # Print history if loading an existing session
     past_messages = await db_history.get_messages(session_id)
     if past_messages:
         console.print("[bold dim]--- Loaded History ---[/bold dim]")
         for msg in past_messages:
-            # Skip displaying internal tool calls/results in CLI history
             if msg["role"] == "tool" or msg.get("tool_calls"):
                 continue
             role_color = "bold cyan" if msg["role"] == "user" else "bold green"
@@ -88,13 +106,90 @@ async def run_cli():
             if not user_input.strip():
                 continue
                 
+            # 1. Exit & Summarize command
             if user_input.lower() == "/exit":
+                console.print("[green][dim]Saving session summary...[/dim]")
+                summary = await agent.save_session_summary(session_id)
+                if summary:
+                    console.print(f"[green]✓ Saved session summary:[/green] [dim]\"{summary}\"[/dim]")
                 console.print("[yellow]Exiting chatbot... Goodbye![/yellow]")
                 break
                 
+            # 2. Clear session history command
             if user_input.lower() == "/clear":
                 await short_memory.clear(session_id)
                 console.print("[red]Cleared history for this session.[/red]\n")
+                continue
+
+            # 3. View memories command
+            if user_input.lower() == "/memories":
+                memories = await agent.long_term_memory.list_all("default_user")
+                if not memories:
+                    console.print("[yellow]No stored long-term memories found.[/yellow]\n")
+                    continue
+                
+                table = Table(title="[bold cyan]Stored Long-Term Memories[/bold cyan]")
+                table.add_column("#", justify="right", style="dim")
+                table.add_column("Fact", style="green")
+                table.add_column("Category", style="magenta")
+                table.add_column("Confidence", justify="right", style="cyan")
+                table.add_column("Accesses", justify="right", style="yellow")
+                table.add_column("Memory ID", style="dim")
+                
+                for idx, m in enumerate(memories, 1):
+                    conf = f"{m.get('confidence', 1.0):.2f}"
+                    accesses = str(m.get("access_count", 0))
+                    m_id = str(m["_id"])
+                    table.add_row(str(idx), m["fact"], m["category"], conf, accesses, m_id)
+                    
+                console.print(table)
+                console.print()
+                continue
+
+            # 4. Forget command (handles specific topics or --all)
+            if user_input.lower().startswith("/forget"):
+                parts = user_input.split(maxsplit=1)
+                if len(parts) < 2:
+                    console.print("[red]Usage: /forget [topic] or /forget --all[/red]\n")
+                    continue
+                
+                topic = parts[1].strip()
+                if topic == "--all":
+                    confirm = Prompt.ask(
+                        "[bold red]Are you sure you want to delete ALL long-term memories? (yes/no)[/bold red]",
+                        choices=["yes", "no"],
+                        default="no"
+                    )
+                    if confirm == "yes":
+                        deleted_count = await agent.long_term_memory.delete_by_topic("default_user", "--all")
+                        console.print(f"[red]Deleted all {deleted_count} memories for this user.[/red]\n")
+                    else:
+                        console.print("[yellow]Cancelled deletion.[/yellow]\n")
+                else:
+                    deleted_count = await agent.long_term_memory.delete_by_topic("default_user", topic)
+                    if deleted_count > 0:
+                        console.print(f"[green]Successfully forgot {deleted_count} memories matching '[bold]{topic}[/bold]'.[/green]\n")
+                    else:
+                        console.print(f"[yellow]No memories found matching '[bold]{topic}[/bold]'.[/yellow]\n")
+                continue
+
+            # 5. Consolidate database command
+            if user_input.lower() == "/consolidate":
+                console.print("[bold yellow]Running memory consolidation pipeline...[/bold yellow]")
+                report = await consolidator.consolidate("default_user")
+                
+                report_text = (
+                    f"🟢 [bold green]Stale Deleted:[/bold green] {report['stale_deleted']}\n"
+                    f"    (0 access counts and older than 30 days)\n\n"
+                    f"🟡 [bold yellow]Duplicates Merged:[/bold yellow] {report['duplicates_merged']}\n"
+                    f"    (Identified exact duplicates with >0.95 similarity)\n\n"
+                    f"🔴 [bold red]Conflicts Resolved:[/bold red] {report['conflicts_resolved']}\n"
+                    f"    (Contradictions detected with 0.85-0.95 similarity)\n\n"
+                    f"🔵 [bold blue]Categories Summarized:[/bold blue] {report['categories_summarized']}\n"
+                    f"    (Bloated categories compressed into clean facts)"
+                )
+                console.print(Panel(report_text, title="Memory Consolidation Report"))
+                console.print()
                 continue
                 
             console.print("[bold green]Assistant:[/bold green]")
@@ -104,12 +199,10 @@ async def run_cli():
             
             async for token in agent.run_stream(session_id, user_input):
                 if token.startswith("__TOOL_CALL__"):
-                    # If we have an active typewriter text stream open, stop it
                     if live:
                         live.stop()
                         live = None
                     
-                    # Parse the tool name and JSON string arguments
                     _, tool_name, args_str = token.split(":", 2)
                     try:
                         args = json.loads(args_str)
@@ -119,7 +212,6 @@ async def run_cli():
                         
                     console.print(f"  [bold yellow]🔧 Running tool: [cyan]{tool_name}({args_fmt})[/cyan]...[/bold yellow]")
                 else:
-                    # Standard text response - open a typewriter stream if not active
                     if not live:
                         response_text = ""
                         live = Live(Text(""), refresh_per_second=15, console=console)
@@ -130,7 +222,7 @@ async def run_cli():
             
             if live:
                 live.stop()
-            console.print()  # Add final blank line
+            console.print()
             
         except KeyboardInterrupt:
             console.print("\n[yellow]Interrupted by user. Exiting...[/yellow]")

@@ -6,3 +6,5 @@ python-dotenv
 rich
 tenacity
 tavily-python
+sentence-transformers
+openai
