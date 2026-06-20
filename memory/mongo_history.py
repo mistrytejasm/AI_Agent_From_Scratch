@@ -81,3 +81,28 @@ class MongoDBChatHistory(BaseMemory):
             {"_id": obj_session_id},
             {"$set": {"updated_at": datetime.now(timezone.utc)}}
         )
+
+    async def delete_session(self, session_id: str) -> bool:
+        """Deletes a session document and all its associated messages from the database."""
+        try:
+            obj_session_id = ObjectId(session_id)
+            # Delete messages first
+            await self.messages_col.delete_many({"session_id": obj_session_id})
+            # Delete session document
+            result = await self.sessions_col.delete_one({"_id": obj_session_id})
+            return result.deleted_count > 0
+        except Exception as e:
+            print(f"Failed to delete session {session_id}: {e}")
+            return False
+
+    async def delete_all_sessions(self) -> int:
+        """Deletes all session documents and all message documents from the database."""
+        try:
+            # Clear all messages
+            await self.messages_col.delete_many({})
+            # Clear all sessions
+            result = await self.sessions_col.delete_many({})
+            return result.deleted_count
+        except Exception as e:
+            print(f"Failed to delete all sessions: {e}")
+            return 0
