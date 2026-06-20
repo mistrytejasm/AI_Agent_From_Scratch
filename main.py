@@ -26,7 +26,6 @@ async def get_or_create_session(db_history: MongoDBChatHistory) -> str:
     """Prompts the user to select an existing chat session or start a new one."""
     console.print(Panel("[bold cyan]Session Manager[/bold cyan]\n1. Start a New Conversation\n2. Load an Existing Conversation"))
     choice = IntPrompt.ask("Choose an option", choices=["1", "2"], default=1)
-
     
     if choice == 2:
         sessions = await db_history.get_all_sessions()
@@ -112,7 +111,7 @@ async def run_cli():
         # Help Commands Console Info
         console.print(
             "[bold yellow]Available Commands:[/bold yellow]\n"
-            "  [bold red]/exit[/bold red] [dim]................. Exit chat & save session summary[/dim]\n"
+            "  [bold red]/exit[/bold red] [dim]................. Exit chat, save summary, & run database consolidation[/dim]\n"
             "  [bold yellow]/clear[/bold yellow] [dim]................ Clear chat history for the active session[/dim]\n"
             "  [bold cyan]/memories[/bold cyan] [dim]............. List all stored active long-term memories[/dim]\n"
             "  [bold magenta]/forget [topic][/bold magenta] [dim]......... Delete memories matching a topic (or --all)[/dim]\n"
@@ -141,12 +140,23 @@ async def run_cli():
                 if not user_input.strip():
                     continue
                     
-                # 1. Exit & Summarize command
+                # 1. Exit, Summarize, & Auto-Consolidate command
                 if user_input.lower() == "/exit":
                     console.print("[green][dim]Saving session summary...[/dim]")
                     summary = await agent.save_session_summary(session_id)
                     if summary:
                         console.print(f"[green]✓ Saved session summary:[/green] [dim]\"{summary}\"[/dim]")
+                    
+                    # Step 12: Automatic Memory Consolidation on session exit
+                    console.print("[dim]Running memory consolidation...[/dim]")
+                    report = await consolidator.consolidate("default_user")
+                    console.print(
+                        f"[green]✓ Memory consolidated:[/green] "
+                        f"[dim]{report['stale_deleted']} stale deleted, "
+                        f"{report['duplicates_merged']} duplicates merged, "
+                        f"{report['conflicts_resolved']} conflicts resolved.[/dim]"
+                    )
+                    
                     console.print("[yellow]Exiting chatbot... Goodbye![/yellow]")
                     should_exit_program = True
                     break
@@ -156,7 +166,7 @@ async def run_cli():
                     await short_memory.clear(session_id)
                     console.print("[red]Cleared history for this session.[/red]\n")
                     continue
-
+ 
                 # 3. View memories command
                 if user_input.lower() == "/memories":
                     memories = await agent.long_term_memory.list_all("default_user")
@@ -181,7 +191,7 @@ async def run_cli():
                     console.print(table)
                     console.print()
                     continue
-
+ 
                 # 4. Forget memory command (handles specific topics or --all)
                 if user_input.lower().startswith("/forget") and not user_input.lower().startswith("/forget_session"):
                     parts = user_input.split(maxsplit=1)
@@ -208,7 +218,7 @@ async def run_cli():
                         else:
                             console.print(f"[yellow]No memories found matching '[bold]{topic}[/bold]'.[/yellow]\n")
                     continue
-
+ 
                 # 5. Consolidate database command
                 if user_input.lower() == "/consolidate":
                     console.print("[bold yellow]Running memory consolidation pipeline...[/bold yellow]")
@@ -227,12 +237,12 @@ async def run_cli():
                     console.print(Panel(report_text, title="Memory Consolidation Report"))
                     console.print()
                     continue
-
+ 
                 # 6. List all saved chat sessions in database command
                 if user_input.lower() == "/sessions":
                     await display_sessions_table(db_history, session_id)
                     continue
-
+ 
                 # 7. Forget chat session command (number or raw ID) or --all
                 if user_input.lower().startswith("/forget_session"):
                     parts = user_input.split(maxsplit=1)
@@ -259,7 +269,7 @@ async def run_cli():
                         sessions = await db_history.get_all_sessions()
                         target_id = None
                         target_title = ""
-
+ 
                         # Parse selected session index number
                         try:
                             idx = int(target)
@@ -273,11 +283,11 @@ async def run_cli():
                                 if s["_id"] == target_id:
                                     target_title = s["title"]
                                     break
-
+ 
                         if not target_id:
                             console.print(f"[red]Invalid session selection: '{target}'[/red]\n")
                             continue
-
+ 
                         # Explicit warning if deleting the currently active session
                         if target_id == session_id:
                             confirm = Prompt.ask(
@@ -292,7 +302,7 @@ async def run_cli():
                                 choices=["yes", "no"],
                                 default="no"
                             )
-
+ 
                         if confirm == "yes":
                             await db_history.delete_session(target_id)
                             console.print(f"[red]Deleted session '{target_title}' and its messages.[/red]\n")
@@ -311,13 +321,15 @@ async def run_cli():
                     
                 console.print("[bold green]Assistant:[/bold green]")
                 
+                # Standard visual typing stream
                 response_text = ""
                 live = None
                 
                 async for token in agent.run_stream(session_id, user_input):
                     if token.startswith("__TOOL_CALL__"):
                         if live:
-                            live.stop; live = None
+                            live.stop()
+                            live = None
                         
                         _, tool_name, args_str = token.split(":", 2)
                         try:

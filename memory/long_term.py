@@ -10,6 +10,7 @@ class LongTermMemory:
     """
     Manages long-term semantic memory storage, retrieval, and deduplication
     using MongoDB Atlas Vector Search and a local embedding model.
+    Supports multi-signal re-ranking and confidence-based filtering.
     """
     def __init__(self, db_conn=None, embedding_client=None):
         self.db = db_conn.db if db_conn else db_client.db
@@ -85,7 +86,7 @@ class LongTermMemory:
         if most_similar:
             score = most_similar["similarity_score"]
 
-            # ZONE A: Similarity > 0.95 -> Exact Duplicate (Reinforce)
+            # 🟢 ZONE A: Similarity > 0.95 -> Exact Duplicate (Reinforce)
             if score > 0.95:
                 await self.collection.update_one(
                     {"_id": most_similar["_id"]},
@@ -100,7 +101,7 @@ class LongTermMemory:
                     "similarity_score": score
                 }
 
-            # ZONE B: Similarity 0.90 - 0.95 -> Evolved Fact (Update in-place)
+            # 🟡 ZONE B: Similarity 0.90 - 0.95 -> Evolved Fact (Update in-place)
             elif score >= 0.90:
                 await self.collection.update_one(
                     {"_id": most_similar["_id"]},
@@ -121,7 +122,7 @@ class LongTermMemory:
                     "similarity_score": score
                 }
 
-        # ZONE C: Similarity < 0.90 (or no similar memory) -> Brand New Knowledge
+        # 🔵 ZONE C: Similarity < 0.90 (or no similar memory) -> Brand New Knowledge
         new_memory = MemoryModel(
             user_id=user_id,
             fact=fact,
@@ -145,18 +146,20 @@ class LongTermMemory:
     async def retrieve(self, user_id: str, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         """
         Retrieves active semantically relevant memories for a user based on a text query.
-        Updates the access stats for retrieved memories.
+        Over-fetches candidates, filters by confidence (>0.5), and applies multi-signal
+        re-ranking (similarity, recency, frequency, category boost).
         """
         query_vector = await self.embedding_client.embed(query)
 
+        # Over-fetch up to 20 candidates (HNSW searches 100 nodes for high retrieval accuracy)
         pipeline = [
             {
                 "$vectorSearch": {
                     "index": "vector_index",
                     "path": "embedding",
                     "queryVector": query_vector,
-                    "numCandidates": 50,
-                    "limit": limit,
+                    "numCandidates": 100,
+                    "limit": 20,
                     "filter": {
                         "user_id": user_id,
                         "is_current": True
@@ -180,11 +183,57 @@ class LongTermMemory:
 
         try:
             cursor = self.collection.aggregate(pipeline)
-            memories = await cursor.to_list(length=limit)
+            candidates = await cursor.to_list(length=20)
 
-            # Reinforce accessed memories asynchronously
-            if memories:
-                memory_ids = [m["_id"] for m in memories]
+            if not candidates:
+                return []
+
+            # 1. Step 11: Confidence-based filtering (Only keep facts with confidence > 0.5)
+            filtered_candidates = [c for c in candidates if c.get("confidence", 1.0) > 0.5]
+            if not filtered_candidates:
+                return []
+
+            # 2. Step 10: Multi-signal re-ranking
+            # A. Infer the expected category from query for Category Boost
+            expected_category = self._infer_expected_category(query)
+            
+            # B. Get maximum access count for Frequency Scaling
+            max_access = max((c.get("access_count", 0) for c in filtered_candidates), default=0)
+            
+            now = datetime.now(timezone.utc)
+            scored_candidates = []
+
+            for c in filtered_candidates:
+                # Signal 1: Semantic Similarity (50%)
+                similarity = c.get("similarity_score", 0.0)
+
+                # Signal 2: Recency Decay (25%)
+                last_acc = c.get("last_accessed", now)
+                if last_acc.tzinfo is None:
+                    last_acc = last_acc.replace(tzinfo=timezone.utc)
+                days_since = max(0.0, (now - last_acc).total_seconds() / 86400.0)
+                recency = 1.0 / (1.0 + days_since)
+
+                # Signal 3: Access Frequency (15%)
+                frequency = c.get("access_count", 0) / max_access if max_access > 0 else 0.0
+
+                # Signal 4: Category Boost (10%)
+                category_boost = 1.0 if expected_category and c.get("category") == expected_category else 0.0
+
+                # Calculate final weighted score
+                final_score = (similarity * 0.50) + (recency * 0.25) + (frequency * 0.15) + (category_boost * 0.10)
+                c["final_ranking_score"] = final_score
+                scored_candidates.append(c)
+
+            # Sort by final score descending
+            scored_candidates.sort(key=lambda x: x["final_ranking_score"], reverse=True)
+            
+            # Slice to target limit
+            top_memories = scored_candidates[:limit]
+
+            # 3. Reinforce ONLY the final selected top memories in MongoDB
+            if top_memories:
+                memory_ids = [m["_id"] for m in top_memories]
                 await self.collection.update_many(
                     {"_id": {"$in": memory_ids}},
                     {
@@ -192,10 +241,26 @@ class LongTermMemory:
                         "$set": {"last_accessed": datetime.now(timezone.utc)}
                     }
                 )
-            return memories
+
+            return top_memories
         except Exception as e:
-            print(f"Error during memory retrieval vector search: {e}")
+            print(f"Error during candidate retrieval and re-ranking: {e}")
             return []
+
+    def _infer_expected_category(self, query: str) -> Optional[str]:
+        """Infers expected category from user query keywords for category boosting."""
+        text = query.lower()
+        if any(k in text for k in ["like", "prefer", "dislike", "love", "hate", "favorite", "choice", "want"]):
+            return "user_preference"
+        if any(k in text for k in ["project", "app", "code", "programming", "database", "stack", "rust", "python", "mongodb", "postgres", "framework"]):
+            return "project_detail"
+        if any(k in text for k in ["live", "reside", "location", "name", "work", "job", "career", "role", "age", "birthday"]):
+            return "personal_info"
+        if any(k in text for k in ["goal", "target", "plan", "achieve", "aim", "future", "objective"]):
+            return "goal"
+        if any(k in text for k in ["last time", "yesterday", "before", "history", "previous", "earlier", "session"]):
+            return "episode"
+        return None
 
     async def list_all(self, user_id: str) -> List[Dict[str, Any]]:
         """Retrieves all active memories for a specific user sorted by last accessed."""

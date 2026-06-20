@@ -1,5 +1,9 @@
 # Long-Term Memory Architecture — Strategic Recommendation
 
+> **Document Version:** 1.0.0
+> **Last Updated:** June 20, 2026
+> **Author:** TejasH MistrY
+
 > **Decision Document** — Recommends the optimal long-term memory architecture for our AI Agent project, answering all strategic questions about memory strategies, frameworks, databases, and pipeline design.
 
 ---

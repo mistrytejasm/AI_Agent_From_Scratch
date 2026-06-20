@@ -1,5 +1,9 @@
 # AI Agent From Scratch — Complete Project Documentation
 
+> **Document Version:** 1.0.0
+> **Last Updated:** June 20, 2026
+> **Author:** TejasH MistrY
+
 > **Single Source of Truth** — This document captures the full architecture, implementation history, design decisions, database schemas, tool integrations, strategies, and roadmap for the **Scalable Python AI Agent** project.
 
 ---
@@ -560,11 +564,13 @@ flowchart TB
 #### Memory Layer Internal Architecture
 
 ```mermaid
-flowchart LR
-    subgraph PUBLIC_API["Public API (used by Agent)"]
+flowchart TD
+    subgraph PUBLIC_API["Public API (used by Agent/CLI)"]
         ADD["add_message()"]
         CTX["get_context()"]
         CLR["clear()"]
+        RUN["run() / run_stream()"]
+        EXIT["/exit hook"]
     end
 
     subgraph STM["ShortTermMemory"]
@@ -572,18 +578,205 @@ flowchart LR
         PROMPT["System Prompt<br/>+ DateTime Injection"]
     end
 
+    subgraph LTM_SYS["Long-Term Memory Subsystem"]
+        LTM["LongTermMemory<br/>retrieve() / store()"]
+        EXTRACT["FactExtractor<br/>extract_and_store()"]
+        CONSOL["MemoryConsolidator<br/>consolidate()"]
+        EMBED["EmbeddingClient<br/>embed() (local CPU)"]
+    end
+
     subgraph PERSIST["MongoDBChatHistory (BaseMemory)"]
         CRUD["CRUD Operations"]
         SESS["Session Management"]
     end
 
+    subgraph DB_CLUSTER["MongoDB Atlas Cluster"]
+        DB_MESS[("messages collection")]
+        DB_SESS[("sessions collection")]
+        DB_MEM[("memories collection (vector index)")]
+    end
+
+    %% STM flow
     ADD -->|delegates| CRUD
-    CTX -->|1. loads from| CRUD
-    CTX -->|2. applies| WINDOW
-    CTX -->|3. prepends| PROMPT
+    CTX -->|fetches history| CRUD
+    CTX --> WINDOW
+    CTX --> PROMPT
     CLR -->|delegates| CRUD
-    CRUD --> DB[("MongoDB Atlas")]
-    SESS --> DB
+
+    %% LTM flow
+    RUN -->|1. retrieve| LTM
+    LTM -->|generate embeddings| EMBED
+    LTM -->|vectorSearch| DB_MEM
+    PROMPT -->|inject retrieved facts| FINAL_PROMPT["Final Prompt Context"]
+    RUN -->|3. background task| EXTRACT
+    EXTRACT -->|rules check| EXTRACT_CHECK{"should extract?"}
+    EXTRACT_CHECK -->|yes| LLM_EXTRACT["LLM Fact Extraction"]
+    LLM_EXTRACT -->|store fact| LTM
+    LTM -->|Three-Zone Check| DB_MEM
+
+    %% Exit Consolidation
+    EXIT -->|save summary| EXTRACT
+    EXIT -->|trigger consolidation| CONSOL
+    CONSOL -->|query facts| DB_MEM
+    CONSOL -->|LLM check conflicts| DB_MEM
+    CONSOL -->|dedup / stale delete| DB_MEM
+
+    CRUD --> DB_MESS
+    SESS --> DB_SESS
+```
+
+---
+
+#### 5.4.4 Local Embedding Client (`llm/embeddings.py`)
+
+**What it does**: Handles lazy-loading of model weights and thread-offloading for text embedding generation.
+
+**Key Features**:
+1.  **Thread Offloading**: Generating vectors via PyTorch models is CPU-intensive. Running this directly in an async loop blocks execution of other async operations. We offload model initialization and vector encoding to a background worker thread pool using `asyncio.to_thread`, keeping the agent prompt-streaming and UI animations completely smooth.
+2.  **Double-Checked Locking**: Implements an `asyncio.Lock()` to serialize initialization. Even if multiple calls request an embedding concurrently during startup, the model is loaded into RAM exactly once.
+3.  **Local Model**: Uses `sentence-transformers/all-MiniLM-L6-v2` (384 dimensions).
+
+##### Model Lazy Loading and Threading Workflow
+```mermaid
+flowchart TD
+    A["Agent/LTM call EmbeddingClient.embed()"] --> B{"Model Initialized?"}
+    B -->|Yes| C["asyncio.to_thread(model.encode, text)"]
+    B -->|No| D["Acquire asyncio.Lock()"]
+    D --> E{"Model Initialized? (double-checked)"}
+    E -->|Yes| F["Release Lock"]
+    E -->|No| G["asyncio.to_thread(SentenceTransformer, model_name)"]
+    G --> H["Load weights into CPU RAM"]
+    H --> I["Set self.model = Loaded Model"]
+    I --> F
+    F --> C
+    C --> J["Return 384-dim float list"]
+```
+
+---
+
+#### 5.4.5 Long-Term Memory Manager (`memory/long_term.py`)
+
+**What it does**: Manages semantic memory retrieval and storage, implementing pre-filtering, similarity comparisons, and re-ranking.
+
+**Key Operations**:
+*   **Semantic Deduplication (Three-Zone Check)**:
+    *   **Zone A (Similarity > 0.95)**: Exact duplicate. Access count is incremented, and `last_accessed` timestamp is updated in-place.
+    *   **Zone B (Similarity 0.90 - 0.95)**: Evolved fact. The fact text is updated in-place (capturing wording updates), embedding vector is refreshed, and access count is incremented.
+    *   **Zone C (Similarity < 0.90)**: Brand new fact. A fresh memory document is inserted with `is_current = True`.
+
+##### Three-Zone Similarity Routing Workflow
+```mermaid
+flowchart TD
+    A["LongTermMemory.store(fact)"] --> B["EmbeddingClient.embed(fact)"]
+    B --> C["_find_most_similar(user_id, embedding)"]
+    C -->|MongoDB vectorSearch| D{"Is match found?"}
+    D -->|No| ZONE_C["ZONE C: Brand New Knowledge<br/>(Similarity < 0.90)"]
+    D -->|Yes| E{"Check Cosine Similarity Score"}
+    E -->|"> 0.95"| ZONE_A["ZONE A: Exact Duplicate (Reinforce)<br/>• Increment access_count<br/>• Update last_accessed"]
+    E -->|"0.90 to 0.95"| ZONE_B["ZONE B: Evolved Fact (Update)<br/>• Update fact text in-place<br/>• Update embedding vector<br/>• Update confidence & category"]
+    E -->|"< 0.90"| ZONE_C
+    ZONE_A --> F["Update DB document"]
+    ZONE_B --> F
+    ZONE_C --> G["Insert new MemoryModel document"]
+```
+
+*   **Multi-Signal Retrieval & Re-ranking Pipeline**:
+    1.  **Over-fetching**: Retrieve 20 candidate memories from Atlas Vector Search (using `numCandidates=100` and cosine similarity).
+    2.  **Confidence-Based Filtering**: Discard any candidates where `confidence <= 0.5` before scoring.
+    3.  **Expected Category Detection**: Run a fast keyword classifier `_infer_expected_category(query)` on query text (e.g. "like" boosts `user_preference`, "project" boosts `project_detail`) to add a category boost.
+    4.  **Multi-Signal Scoring**:
+        $$\text{Final Score} = (\text{similarity} \times 0.50) + (\text{recency} \times 0.25) + (\text{frequency} \times 0.15) + (\text{category\_boost} \times 0.10)$$
+        *   **Similarity**: The raw vector search cosine similarity score from Atlas.
+        *   **Recency**: Computed as $\frac{1.0}{1.0 + \text{days\_since\_last\_access}}$.
+        *   **Frequency**: Scale access count relative to highest count in candidates: $\frac{\text{access\_count}}{\max(\text{access\_counts})}$.
+        *   **Category Boost**: $+0.10$ if the candidate's category matches the inferred expected category.
+    5.  **Top-K Selection**: Sort descending by final score and slice the top $K$ (default: 5) memories.
+    6.  **Targeted Reinforcement**: Increment access count in MongoDB *only* for the final returned top-K memories.
+
+##### Multi-Signal Retrieval & Re-ranking Pipeline
+```mermaid
+flowchart TD
+    A["LongTermMemory.retrieve(query)"] --> B["EmbeddingClient.embed(query)"]
+    B --> C["Vector search over memories collection<br/>(limit=20, numCandidates=100)"]
+    C -->|MongoDB $vectorSearch| D["20 Candidate documents"]
+    D --> E["Filter: Keep only confidence > 0.5"]
+    E --> F["Infer Expected Category from query keywords<br/>(e.g., 'like' -> user_preference)"]
+    F --> G["Compute scores for each candidate:<br/>Final = (sim * 0.50) + (recency * 0.25) + (freq * 0.15) + (boost * 0.10)"]
+    G --> H["Sort descending by Final Score"]
+    H --> I["Slice top K (default 5) facts"]
+    I --> J["Reinforce DB: Increment access_count for top K only"]
+    J --> K["Return top K facts to Agent"]
+```
+
+---
+
+#### 5.4.6 Fact Extractor (`memory/fact_extractor.py`)
+
+**What it does**: Analyzes conversation turns in the background using an LLM to extract structured atomic facts.
+
+**Key Features**:
+1.  **Skip Filter**: To avoid redundant LLM billing and latency, checks if the user's message is a slash command, greeting, casual acknowledgment, or contains fewer than 3 words. If so, extraction is bypassed.
+2.  **Background Processing**: Launches the extraction using `asyncio.create_task()`. The agent loop yields the final response token immediately, and fact extraction runs in the background. A tracking set prevents garbage collection of the background task.
+
+##### Background Fact Extraction Workflow
+```mermaid
+flowchart TD
+    A["Agent Turn Complete<br/>(assistant response yielded)"] --> B["FactExtractor._should_extract(user_input)"]
+    B -->|No| C["Skip: greeting/command/casual noise"]
+    B -->|Yes| D["Create background task:<br/>asyncio.create_task(extract_and_store())"]
+    D --> E["Async task continues running in background<br/>(main agent loop returns response immediately)"]
+    E --> F["LLM runs fact extraction prompt"]
+    F --> G["Parse JSON output from LLM: {'facts': [...]}"]
+    G --> H["For each fact: LongTermMemory.store()"]
+    H --> I["Task completes and is discarded from set"]
+```
+
+---
+
+#### 5.4.7 Memory Consolidator (`memory/consolidator.py`)
+
+**What it does**: Performs periodic or session-exit maintenance ("Dreaming" phase) on the user's memory database to prune noise and compress facts.
+
+**Consolidation Stages**:
+1.  **Prune Staleness**: Deletes active memories with `access_count = 0` that are older than 30 days (likely false-positive extractions).
+2.  **Merge Duplicates**: Scans active memories and merges duplicate pairs (>0.95 similarity), summing their access counts and deleting the older document.
+3.  **Resolve Conflicts**: Identifies semantically close facts (0.85-0.95 similarity). Prompts the LLM to inspect them for logical contradictions. If confirmed, deletes the older document.
+4.  **Compress Categories**: If any category has more than 15 active memories, prompts the LLM to compress the bloated list into 3-5 high-level comprehensive facts.
+
+##### Consolidation Pipeline Workflow
+```mermaid
+flowchart TD
+    A["Trigger: /exit command or manual /consolidate"] --> B["MemoryConsolidator.consolidate(user_id)"]
+    
+    subgraph STALE["1. Pruning Staleness"]
+        B --> C["Delete memories where access_count=0 AND age > 30 days"]
+    end
+    
+    subgraph DEDUP["2. Merging Duplicates"]
+        C --> D["Scan all active memories<br/>Compare Cosine Similarity"]
+        D --> E{"Similarity > 0.95?"}
+        E -->|Yes| F["Combine access counts<br/>Keep newer, delete older document"]
+        E -->|No| G["Keep both"]
+    end
+    
+    subgraph CONFLICTS["3. Resolving Conflicts"]
+        F & G --> H["Scan all active memories<br/>Compare Cosine Similarity"]
+        H --> I{"Similarity 0.85 to 0.95?"}
+        I -->|Yes| J["Call LLM to check logical contradiction"]
+        J --> K{"Contradicts?"}
+        K -->|Yes| L["Delete older document"]
+        K -->|No| M["Keep both"]
+        I -->|No| M
+    end
+    
+    subgraph COMPRESS["4. Categorical Compression"]
+        L & M --> N["Check if any category has > 15 active memories"]
+        N -->|Yes| O["Call LLM to summarize category into 3-5 facts"]
+        O --> P["Insert summarized facts<br/>Delete old bloated facts"]
+        N -->|No| Q["No action"]
+    end
+    
+    P & Q --> R["Return Consolidation Report to CLI"]
 ```
 
 ---
@@ -991,7 +1184,7 @@ When loading an existing session, the CLI replays past messages (filtering out i
 
 ### Collections
 
-The application uses **2 MongoDB collections** in the `chatbot_db` database:
+The application uses **3 MongoDB collections** in the `chatbot_db` database:
 
 #### `sessions` Collection
 ```json
@@ -1028,12 +1221,30 @@ The application uses **2 MongoDB collections** in the `chatbot_db` database:
 }
 ```
 
+#### `memories` Collection
+```json
+{
+  "_id": ObjectId("..."),
+  "user_id": "default_user",
+  "fact": "User prefers light theme.",
+  "embedding": [0.0123, -0.0456, "...384 float dimensions"],
+  "category": "user_preference",
+  "source_session_id": "6a36478abdf6282cb10d10a7",
+  "source_message": "I like light theme because it helps me code in bright rooms.",
+  "confidence": 0.95,
+  "access_count": 4,
+  "is_current": true,
+  "created_at": ISODate("2026-06-20T07:50:00Z"),
+  "last_accessed": ISODate("2026-06-20T07:57:38Z"),
+  "metadata": {}
+}
+```
+
 ### Schema Scaling Strategy
 
 | Phase | New Collections | New Fields | Purpose |
 |-------|----------------|------------|---------|
-| **Current** | `sessions`, `messages` | — | Basic chat + tool execution |
-| **Phase 4** | `memories` | `fact`, `embedding[384]`, `category` | Long-term memory via Atlas Vector Search |
+| **Current** | `sessions`, `messages`, `memories` | `fact`, `embedding[384]`, `category` | Complete core chat, tools, and long-term memories |
 | **Future** | `agents` | `agent_id`, `capabilities`, `model` | Multi-agent configuration |
 | **Future** | — (in `messages`) | `sender_agent_id`, `is_internal` | Track agent-to-agent communication |
 
@@ -1048,7 +1259,8 @@ Every major boundary has an **abstract interface** (port) and a **concrete imple
 | Layer | Port (Abstract) | Adapter (Concrete) |
 |-------|-----------------|-------------------|
 | LLM | `BaseLLM` | `GroqProvider` |
-| Memory | `BaseMemory` | `MongoDBChatHistory` |
+| Memory (STM) | `BaseMemory` | `MongoDBChatHistory` |
+| Memory (LTM) | — | `LongTermMemory` |
 | Agent | `BaseAgent` | `SimpleAgent` |
 
 **Why**: Vendor independence. Switching from Groq to OpenAI requires only creating an `OpenAIProvider` implementing `BaseLLM`. Zero changes to agent, memory, or CLI code.
