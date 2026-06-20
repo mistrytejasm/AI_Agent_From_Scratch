@@ -3,6 +3,7 @@ import asyncio
 from typing import List
 from config.settings import settings
 from sentence_transformers import SentenceTransformer
+from config.logging_config import logger
 
 class EmbeddingClient:
     """
@@ -33,8 +34,10 @@ class EmbeddingClient:
         async with self._lock:
             # Double-checked locking pattern to avoid race conditions during async initialization
             if self._model is None:
+                logger.info(f"EmbeddingClient: Loading model weights for model: '{self.model_name}'...")
                 # Load the model in a background thread to prevent blocking startup
                 self._model = await asyncio.to_thread(self._load_model)
+                logger.info(f"EmbeddingClient: Model '{self.model_name}' successfully loaded into memory")
             return self._model
 
     async def embed(self, text: str) -> List[float]:
@@ -42,6 +45,7 @@ class EmbeddingClient:
         Generates a 384-dimensional embedding vector for a single text chunk.
         Runs in a background thread to avoid blocking the event loop.
         """
+        logger.info(f"EmbeddingClient: Generating embedding for text: '{text[:60]}...' (length: {len(text)} chars)")
         model = await self._get_model()
         # SentenceTransformer.encode is synchronous & CPU-bound; offload it to thread pool
 
@@ -56,6 +60,7 @@ class EmbeddingClient:
         if not texts:
             return []
 
+        logger.info(f"EmbeddingClient: Generating batch embeddings for {len(texts)} text chunks")
         model = await self._get_model()
         vector_batch = await asyncio.to_thread(model.encode, texts)
         return [vec.tolist() for vec in vector_batch]

@@ -3,6 +3,7 @@ import asyncio
 from typing import List, Dict, Any, Optional
 
 from llm.groq_provider import GroqProvider
+from config.logging_config import logger
 
 class FactExtractor:
     """
@@ -98,7 +99,7 @@ You must output a valid JSON object in this exact format:
                 return data
             return []
         except json.JSONDecodeError as e:
-            print(f"Failed to parse fact extraction JSON: {e}\nRaw output: {llm_output}")
+            logger.error(f"Failed to parse fact extraction JSON: {e}\nRaw output: {llm_output}")
             return []
 
     async def extract(self, user_input: str, agent_response: str) -> List[Dict[str, Any]]:
@@ -107,8 +108,10 @@ You must output a valid JSON object in this exact format:
         """
         # Skip if the input doesn't contain useful information
         if not self._should_extract(user_input):
+            logger.info("FactExtractor: Skipping fact extraction because user input is conversational noise / too short")
             return []
 
+        logger.info("FactExtractor: Analyzing conversation turn for long-term facts...")
         messages = [
             {"role": "system", "content": self.SYSTEM_PROMPT},
             {
@@ -126,7 +129,7 @@ You must output a valid JSON object in this exact format:
             llm_output = response.get("content", "")
             return self._parse_facts(llm_output)
         except Exception as e:
-            print(f"LLM fact extraction call failed: {e}")
+            logger.error(f"LLM fact extraction call failed: {e}")
             return []
 
     async def extract_and_store(
@@ -142,8 +145,10 @@ You must output a valid JSON object in this exact format:
         Extracts facts from a conversation turn and stores them in long-term memory.
         Runs deduplication automatically through long_term_memory.store().
         """
+        logger.info(f"FactExtractor: Starting extract_and_store for session '{session_id}' (user_id: '{user_id}')")
         # 1. Extract facts from the conversation turn
         facts = await self.extract(user_input, agent_response)
+        logger.info(f"FactExtractor: Extracted {len(facts)} facts from turn")
         if not facts:
             return []
 
@@ -157,6 +162,7 @@ You must output a valid JSON object in this exact format:
             if not fact_text:
                 continue
 
+            logger.info(f"FactExtractor: Storing extracted fact: '{fact_text}'")
             # Store the fact (the memory manager handles insertion, updating, or reinforcing)
             outcome = await long_term_memory.store(
                 user_id=user_id,
@@ -171,12 +177,14 @@ You must output a valid JSON object in this exact format:
                 "outcome": outcome
             })
 
+        logger.info(f"FactExtractor: Extract and store completed successfully. Outcomes: {results}")
         return results
 
     async def generate_summary(self, chat_history_text: str) -> Optional[str]:
         """
         Generates a concise 2-3 sentence summary of a chat history to act as episodic memory.
         """
+        logger.info("FactExtractor: Generating episodic session summary...")
         prompt = (
             "You are a precise summarization engine. Analyze the following conversation history and generate a "
             "concise 2-3 sentence digest. Focus strictly on the primary topics discussed, decisions made, goals established, "
@@ -188,7 +196,11 @@ You must output a valid JSON object in this exact format:
         try:
             response = await self.llm.generate([{"role": "user", "content": prompt}])
             summary = response.get("content", "").strip()
+            if summary:
+                logger.info(f"FactExtractor: Episodic session summary generated successfully: '{summary}'")
+            else:
+                logger.warning("FactExtractor: Episodic summary output was empty")
             return summary if summary else None
         except Exception as e:
-            print(f"Failed to generate session summary via LLM: {e}")
+            logger.error(f"Failed to generate session summary via LLM: {e}")
             return None
