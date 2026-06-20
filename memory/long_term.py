@@ -5,6 +5,7 @@ from bson import ObjectId
 from database.connection import db_client
 from llm.embeddings import EmbeddingClient
 from database.models import MemoryModel
+from config.logging_config import logger
 
 class LongTermMemory:
     """
@@ -22,6 +23,7 @@ class LongTermMemory:
         Finds the single most semantically similar active memory for a user.
         Returns the memory document with an injected 'similarity_score' field, or None.
         """
+        logger.info(f"MongoDB _find_most_similar called for user '{user_id}' using vector search")
         pipeline = [
             {
                 "$vectorSearch": {
@@ -55,9 +57,11 @@ class LongTermMemory:
         try:
             cursor = self.collection.aggregate(pipeline)
             results = await cursor.to_list(length=1)
-            return results[0] if results else None
+            most_similar = results[0] if results else None
+            logger.info(f"MongoDB _find_most_similar complete (found match: {most_similar is not None})")
+            return most_similar
         except Exception as e:
-            print(f"Error during duplicate vector search: {e}")
+            logger.error(f"Error during duplicate vector search: {e}")
             return None
 
     async def store(
@@ -78,16 +82,20 @@ class LongTermMemory:
             Dict containing the outcome: {"status": "inserted"|"updated"|"reinforced", "id": str}
         """
         # 1. Embed the incoming fact
+        logger.info(f"LTM store called for user '{user_id}' with fact: '{fact}'")
         embedding = await self.embedding_client.embed(fact)
+        logger.info("Fact embedded successfully")
 
         # 2. Check for the most similar existing memory
         most_similar = await self._find_most_similar(user_id, embedding)
 
         if most_similar:
             score = most_similar["similarity_score"]
+            logger.info(f"Most semantically similar memory check: similarity score is {score:.4f}")
 
             # 🟢 ZONE A: Similarity > 0.95 -> Exact Duplicate (Reinforce)
             if score > 0.95:
+                logger.info(f"Zone A Match (>0.95) for user '{user_id}': Reinforcing memory ID {most_similar['_id']}")
                 await self.collection.update_one(
                     {"_id": most_similar["_id"]},
                     {
@@ -95,6 +103,7 @@ class LongTermMemory:
                         "$set": {"last_accessed": datetime.now(timezone.utc)}
                     }
                 )
+                logger.info(f"LTM store complete (Reinforce success) for ID: {most_similar['_id']}")
                 return {
                     "status": "reinforced",
                     "id": str(most_similar["_id"]),
@@ -103,6 +112,7 @@ class LongTermMemory:
 
             # 🟡 ZONE B: Similarity 0.90 - 0.95 -> Evolved Fact (Update in-place)
             elif score >= 0.90:
+                logger.info(f"Zone B Match (0.90-0.95) for user '{user_id}': Updating memory ID {most_similar['_id']} in-place")
                 await self.collection.update_one(
                     {"_id": most_similar["_id"]},
                     {
@@ -116,6 +126,7 @@ class LongTermMemory:
                         "$inc": {"access_count": 1}
                     }
                 )
+                logger.info(f"LTM store complete (Update success) for ID: {most_similar['_id']}")
                 return {
                     "status": "updated",
                     "id": str(most_similar["_id"]),
@@ -123,6 +134,7 @@ class LongTermMemory:
                 }
 
         # 🔵 ZONE C: Similarity < 0.90 (or no similar memory) -> Brand New Knowledge
+        logger.info(f"Zone C Match (<0.90) or no similar match for user '{user_id}': Inserting new memory record")
         new_memory = MemoryModel(
             user_id=user_id,
             fact=fact,
@@ -137,6 +149,7 @@ class LongTermMemory:
         )
         
         result = await self.collection.insert_one(new_memory.to_mongo_dict())
+        logger.info(f"LTM store complete (Insert success) for new ID: {result.inserted_id}")
         return {
             "status": "inserted",
             "id": str(result.inserted_id),
@@ -149,6 +162,7 @@ class LongTermMemory:
         Over-fetches candidates, filters by confidence (>0.5), and applies multi-signal
         re-ranking (similarity, recency, frequency, category boost).
         """
+        logger.info(f"LTM retrieve called for user '{user_id}', query: '{query}'")
         query_vector = await self.embedding_client.embed(query)
 
         # Over-fetch up to 20 candidates (HNSW searches 100 nodes for high retrieval accuracy)
@@ -185,17 +199,20 @@ class LongTermMemory:
             cursor = self.collection.aggregate(pipeline)
             candidates = await cursor.to_list(length=20)
 
+            logger.info(f"MongoDB Vector Search returned {len(candidates)} candidates")
             if not candidates:
                 return []
 
             # 1. Step 11: Confidence-based filtering (Only keep facts with confidence > 0.5)
             filtered_candidates = [c for c in candidates if c.get("confidence", 1.0) > 0.5]
+            logger.info(f"Filtered candidates with confidence > 0.5: count is {len(filtered_candidates)}")
             if not filtered_candidates:
                 return []
 
             # 2. Step 10: Multi-signal re-ranking
             # A. Infer the expected category from query for Category Boost
             expected_category = self._infer_expected_category(query)
+            logger.info(f"Inferred expected category from query: '{expected_category}'")
             
             # B. Get maximum access count for Frequency Scaling
             max_access = max((c.get("access_count", 0) for c in filtered_candidates), default=0)
@@ -230,6 +247,7 @@ class LongTermMemory:
             
             # Slice to target limit
             top_memories = scored_candidates[:limit]
+            logger.info(f"Selected top {len(top_memories)} memories after multi-signal ranking")
 
             # 3. Reinforce ONLY the final selected top memories in MongoDB
             if top_memories:
@@ -241,10 +259,11 @@ class LongTermMemory:
                         "$set": {"last_accessed": datetime.now(timezone.utc)}
                     }
                 )
+                logger.info("Reinforced access_count and last_accessed for top retrieved memories")
 
             return top_memories
         except Exception as e:
-            print(f"Error during candidate retrieval and re-ranking: {e}")
+            logger.error(f"Error during candidate retrieval and re-ranking: {e}")
             return []
 
     def _infer_expected_category(self, query: str) -> Optional[str]:
@@ -270,12 +289,15 @@ class LongTermMemory:
 
     async def delete(self, memory_id: str) -> bool:
         """Deletes a specific memory document permanently by its ID."""
+        logger.info(f"LTM delete called for memory ID: '{memory_id}'")
         try:
             obj_id = ObjectId(memory_id) if isinstance(memory_id, str) else memory_id
             result = await self.collection.delete_one({"_id": obj_id})
-            return result.deleted_count > 0
+            success = result.deleted_count > 0
+            logger.info(f"LTM delete completed (success: {success})")
+            return success
         except Exception as e:
-            print(f"Failed to delete memory {memory_id}: {e}")
+            logger.error(f"Failed to delete memory {memory_id}: {e}")
             return False
 
     async def delete_by_topic(self, user_id: str, topic: str) -> int:
@@ -284,21 +306,27 @@ class LongTermMemory:
         1. Exact/fuzzy keyword match on fact string.
         2. Semantic similarity vector search matching on the topic.
         """
+        logger.info(f"LTM delete_by_topic called for user '{user_id}', topic: '{topic}'")
         deleted_count = 0
 
         # Case 1: Complete wipe request
         if topic.strip().lower() == "--all":
+            logger.info(f"LTM wipe all memories requested for user '{user_id}'")
             result = await self.collection.delete_many({"user_id": user_id})
+            logger.info(f"LTM wipe complete: deleted {result.deleted_count} memories")
             return result.deleted_count
 
         # Case 2: Exact/fuzzy keyword regex match (highly reliable for specific keywords)
+        logger.info(f"LTM running regex keyword deletion check for topic '{topic}'")
         regex_result = await self.collection.delete_many({
             "user_id": user_id,
             "fact": {"$regex": topic, "$options": "i"}
         })
         deleted_count += regex_result.deleted_count
+        logger.info(f"LTM regex keyword deletion deleted {regex_result.deleted_count} memories")
 
         # Case 3: Semantic match (catch related words/synonyms)
+        logger.info(f"LTM running semantic similarity vector search for topic '{topic}'")
         topic_vector = await self.embedding_client.embed(topic)
         pipeline = [
             {
@@ -327,11 +355,14 @@ class LongTermMemory:
             candidates = await cursor.to_list(length=10)
             # Find candidate memory IDs that are close semantically (Similarity > 0.80)
             semantic_ids = [c["_id"] for c in candidates if c["similarity_score"] > 0.80]
+            logger.info(f"Found {len(semantic_ids)} candidate memories with similarity score > 0.80")
 
             if semantic_ids:
                 sem_result = await self.collection.delete_many({"_id": {"$in": semantic_ids}})
                 deleted_count += sem_result.deleted_count
+                logger.info(f"LTM semantic similarity search deleted {sem_result.deleted_count} memories")
         except Exception as e:
-            print(f"Semantic cleanup check failed: {e}")
+            logger.error(f"Semantic cleanup check failed: {e}")
 
+        logger.info(f"LTM delete_by_topic complete: deleted {deleted_count} total memories")
         return deleted_count

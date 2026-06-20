@@ -7,6 +7,7 @@ from database.connection import db_client
 from llm.groq_provider import GroqProvider
 from llm.embeddings import EmbeddingClient
 from database.models import MemoryModel
+from config.logging_config import logger
 
 # Timezone-aware minimum datetime for safe comparison with MongoDB datetimes
 EPOCH_START = datetime(1970, 1, 1, tzinfo=timezone.utc)
@@ -43,21 +44,25 @@ class MemoryConsolidator:
         Returns:
             Dict containing the cleanup statistics.
         """
+        logger.info(f"Consolidator: Starting memory consolidation pipeline for user '{user_id}'")
         stale_deleted = await self._find_stale(user_id)
         duplicates_merged = await self._find_duplicates(user_id)
         conflicts_resolved = await self._find_conflicts(user_id)
         categories_summarized = await self._compress_bloated_categories(user_id)
 
-        return {
+        stats = {
             "stale_deleted": stale_deleted,
             "duplicates_merged": duplicates_merged,
             "conflicts_resolved": conflicts_resolved,
             "categories_summarized": categories_summarized
         }
+        logger.info(f"Consolidator: Consolidation complete for user '{user_id}': {stats}")
+        return stats
 
     async def _find_stale(self, user_id: str, threshold_days: int = 30) -> int:
         """Deletes active memories that have 0 access count and are older than threshold_days."""
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=threshold_days)
+        logger.info(f"Consolidator: Scanning for stale memories for user '{user_id}' (threshold_days={threshold_days}, cutoff={cutoff_date})")
         
         query = {
             "user_id": user_id,
@@ -67,6 +72,7 @@ class MemoryConsolidator:
         }
         
         result = await self.collection.delete_many(query)
+        logger.info(f"Consolidator: Pruned {result.deleted_count} stale memories")
         return result.deleted_count
 
     async def _find_duplicates(self, user_id: str) -> int:
@@ -74,8 +80,10 @@ class MemoryConsolidator:
         Identifies exact duplicates (similarity > 0.95). Merges them in-place
         by keeping the newer one, combining access counts, and deleting the old one.
         """
+        logger.info(f"Consolidator: Scanning for duplicate memories for user '{user_id}' (similarity > 0.95)")
         memories = await self.collection.find({"user_id": user_id, "is_current": True}).to_list(length=None)
         if len(memories) < 2:
+            logger.info("Consolidator: Duplicate check complete (less than 2 memories exist)")
             return 0
 
         merged_count = 0
@@ -98,6 +106,7 @@ class MemoryConsolidator:
                     t2 = m2.get("created_at", EPOCH_START)
                     newer, older = (m2, m1) if t2 > t1 else (m1, m2)
 
+                    logger.info(f"Consolidator: Found duplicate memories (similarity={sim:.4f}). Merging older ID {older['_id']} ('{older['fact']}') into newer ID {newer['_id']} ('{newer['fact']}')")
                     # Combine metrics
                     combined_access = newer.get("access_count", 0) + older.get("access_count", 0) + 1
                     
@@ -119,6 +128,7 @@ class MemoryConsolidator:
                     if older == m1:
                         break
                         
+        logger.info(f"Consolidator: Duplicate check complete (merged {merged_count} duplicate memories)")
         return merged_count
 
     async def _find_conflicts(self, user_id: str) -> int:
@@ -126,8 +136,10 @@ class MemoryConsolidator:
         Identifies contradictions (similarity 0.85-0.95). Uses the LLM to verify,
         and deletes the older fact if a conflict is confirmed.
         """
+        logger.info(f"Consolidator: Scanning for logical contradictions for user '{user_id}' (similarity 0.85-0.95)")
         memories = await self.collection.find({"user_id": user_id, "is_current": True}).to_list(length=None)
         if len(memories) < 2:
+            logger.info("Consolidator: Contradiction check complete (less than 2 memories exist)")
             return 0
 
         resolved_count = 0
@@ -145,6 +157,8 @@ class MemoryConsolidator:
 
                 sim = _cosine_similarity(m1["embedding"], m2["embedding"])
                 if 0.85 <= sim <= 0.95:
+                    logger.info(f"Consolidator: Found potential contradiction (similarity={sim:.4f}). Verifying with LLM...")
+                    logger.info(f"Consolidator: Fact 1: '{m1['fact']}' | Fact 2: '{m2['fact']}'")
                     # Potential contradiction! Ask the LLM to verify
                     contradicts = await self._verify_contradiction(m1["fact"], m2["fact"])
                     if contradicts:
@@ -153,6 +167,7 @@ class MemoryConsolidator:
                         t2 = m2.get("created_at", EPOCH_START)
                         newer, older = (m2, m1) if t2 > t1 else (m1, m2)
 
+                        logger.warning(f"Consolidator: Contradiction confirmed by LLM. Deleting older fact ID {older['_id']} ('{older['fact']}')")
                         await self.collection.delete_one({"_id": older["_id"]})
                         deleted_ids.add(older["_id"])
                         resolved_count += 1
@@ -160,6 +175,7 @@ class MemoryConsolidator:
                         if older == m1:
                             break
 
+        logger.info(f"Consolidator: Contradiction check complete (resolved {resolved_count} conflict contradictions)")
         return resolved_count
 
     async def _verify_contradiction(self, fact1: str, fact2: str) -> bool:
@@ -183,9 +199,11 @@ class MemoryConsolidator:
             )
             content = response.get("content", "").strip()
             data = json.loads(content)
-            return bool(data.get("contradict", False))
+            result = bool(data.get("contradict", False))
+            logger.info(f"Consolidator: LLM contradiction validation returned: {result}")
+            return result
         except Exception as e:
-            print(f"Error checking memory contradiction: {e}")
+            logger.error(f"Error checking memory contradiction: {e}")
             return False
 
     async def _compress_bloated_categories(self, user_id: str, threshold: int = 15) -> int:
@@ -193,6 +211,7 @@ class MemoryConsolidator:
         Compresses categories with more than 'threshold' active memories
         by summarizing them into 3-5 comprehensive facts.
         """
+        logger.info(f"Consolidator: Scanning for bloated categories for user '{user_id}' (threshold={threshold})")
         memories = await self.collection.find({"user_id": user_id, "is_current": True}).to_list(length=None)
         
         # Group memories by category
@@ -209,6 +228,7 @@ class MemoryConsolidator:
                 continue
                 
             if len(cat_memories) > threshold:
+                logger.info(f"Consolidator: Category '{category}' has {len(cat_memories)} memories, exceeding threshold of {threshold}. Summarizing with LLM...")
                 facts_text = "\n".join(f"- {m['fact']}" for m in cat_memories)
                 
                 prompt = (
@@ -256,8 +276,9 @@ class MemoryConsolidator:
                             )
                             await self.collection.insert_one(new_memory.to_mongo_dict())
                             
+                        logger.info(f"Consolidator: Compressed category '{category}' (deleted {len(old_ids)} raw memories and generated {len(new_facts)} summary facts)")
                         summarized_count += len(old_ids)
                 except Exception as e:
-                    print(f"Failed to compress bloated category '{category}': {e}")
+                    logger.error(f"Failed to compress bloated category '{category}': {e}")
                     
         return summarized_count
