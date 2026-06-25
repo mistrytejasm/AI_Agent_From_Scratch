@@ -1,6 +1,6 @@
 # Deep Research Agent: Production-Grade Architecture & Engineering Reference
 
-> **Document Version:** 3.0.0  
+> **Document Version:** 3.1.0  
 > **Last Updated:** June 25, 2026  
 > **Author:** TejasH MistrY  
 > **Document Number:** 08 (Doc 8)
@@ -129,6 +129,16 @@
     - [Service-to-Service Workflow Diagram](#service-to-service-workflow-diagram)
     - [Job Execution Pipeline Diagram](#job-execution-pipeline-diagram)
     - [Infrastructure Layout Diagram](#infrastructure-layout-diagram)
+15. [Part M: Production Evaluation, Observability & Operational Runbook](#part-m-production-evaluation-observability--operational-runbook)
+    - [1. Evaluation Framework](#1-evaluation-framework)
+    - [2. Observability & Monitoring](#2-observability--monitoring)
+    - [3. Failure Analysis & Debugging](#3-failure-analysis--debugging)
+    - [4. Final System Blueprint & Deliverable](#4-final-system-blueprint--deliverable)
+    - [Monitoring Architecture Diagram](#monitoring-architecture-diagram)
+    - [Evaluation Pipeline Diagram](#evaluation-pipeline-diagram)
+    - [Failure Tracing Flow Diagram](#failure-tracing-flow-diagram)
+    - [Debugging Workflow Diagram](#debugging-workflow-diagram)
+    - [Metric Collection Architecture Diagram](#metric-collection-architecture-diagram)
 
 ---
 
@@ -3429,6 +3439,803 @@ graph TD
 - *Trade-offs*: Proprietary models make it difficult to run evaluations locally.
 - *Cost Considerations*: Evaluation requires high token counts, which are handled at internal GCP developer rates.
 - *Scaling Limitations*: AutoSxS judges require GPU resources during model validation phases.
+
+---
+
+# Part L: Custom Production-Grade Deep Research Architecture Design
+
+This section outlines the complete architectural design and production blueprint for our custom, enterprise-grade Deep Research system. The architecture is designed to handle complex research queries, process massive multi-format file uploads (PDF, DOCX, PPTX, XLSX, CSV, images), verify factual claims, manage long-running background tasks, and scale to serve millions of users with strict security, tenant isolation, and detailed observability.
+
+## High-Level System Architecture Diagram
+
+```mermaid
+graph TD
+    subgraph ClientLayer["Client Layer"]
+        UI["Web UI / Desktop Client"] --> API["FastAPI Gateway"]
+    end
+
+    subgraph APIRoutingLayer["API & Routing Layer"]
+        API --> Auth["Auth & Tenant Isolation Service"]
+        API --> JobManager["Job Management Service"]
+        JobManager --> RedisQueue["Redis Task Queue (Celery)"]
+    end
+
+    subgraph AgenticOrch["Agentic Orchestration (LangGraph & Pydantic AI)"]
+        RedisQueue --> WorkerPool["Asynchronous Worker Pool"]
+        WorkerPool --> GraphOrch["LangGraph State Coordinator"]
+        GraphOrch --> Planner["Planner Agent (Pydantic AI + o3-mini)"]
+        GraphOrch --> Researcher["Research Agent (Pydantic AI + GPT-4o)"]
+        GraphOrch --> Searcher["Search Agent (Pydantic AI + GPT-4o-mini)"]
+    end
+
+    subgraph DocPipeline["Document Understanding & Ingestion Pipeline"]
+        GraphOrch --> DocProcessor["Doc Processor (Unstructured / Marker)"]
+        DocProcessor --> ParserPool["Document Parser Pool (Pandas / PyMuPDF)"]
+    end
+
+    subgraph StorageRetrieval["Storage & Retrieval"]
+        ParserPool --> ObjectStore["S3 Object Store (HTML, PDF, Cache)"]
+        GraphOrch --> VectorStore["Qdrant DB (Dense & Sparse)"]
+        GraphOrch --> RAG["Hybrid RAG & Re-ranking Engine"]
+        GraphOrch --> MetadataDb["PostgreSQL DB (State checkpoints & Citation DB)"]
+    end
+
+    subgraph QAQA["Quality Assurance & Synthesis"]
+        GraphOrch --> Verifier["Verification & Claim Engine"]
+        GraphOrch --> ReportGen["Report Writing & Citation Engine"]
+    end
+
+    subgraph ObsOps["Observability & Ops"]
+        GraphOrch --> Langfuse["Langfuse LLM Telemetry"]
+        GraphOrch --> OTEL["OpenTelemetry + Datadog APM"]
+    end
+
+    %% Styling
+    classDef default fill:#1f2937,stroke:#374151,stroke-width:1px,color:#f3f4f6;
+    classDef highlight fill:#0369a1,stroke:#0284c7,stroke-width:2px,color:#fff;
+    class GraphOrch,MetadataDb,VectorStore highlight;
+```
+
+---
+
+## 1. Core Technology Stack Selection
+
+To construct a robust, production-ready system, we carefully select the core technologies for agent orchestration, modeling, data retrieval, scraping, and telemetry, analyzing the architectural rationale, alternatives considered, trade-offs, and scaling limits for each.
+
+### 1.1 Agentic State Coordination: LangGraph
+- **Why Chosen**: LangGraph is selected as the primary agent orchestration framework. It treats agent operations as stateful, cyclic graphs. This design is critical for Deep Research, which requires iterative loops (e.g., search $\rightarrow$ extract $\rightarrow$ evaluate $\rightarrow$ re-search). Unlike linear chain pipelines, LangGraph supports dynamic routing, cyclic loops, and state-preserving checks at the node level.
+- **Alternatives Considered**: 
+  - *CrewAI*: Good for fast multi-role setups but lacks low-level control over state transitions and is highly prone to conversational loops.
+  - *AutoGen*: Highly flexible but difficult to manage and debug at scale due to its non-deterministic agent communication structures.
+- **Trade-offs**: LangGraph requires defining strict schemas and manual graph state updates, which increases development complexity and onboarding friction for new engineers.
+- **Scalability**: Stateless graph execution engines run on containerized workers, scaling horizontally in Kubernetes. State checks are serialized to a PostgreSQL database, minimizing memory footprint on workers.
+
+### 1.2 Agent Interface Boundary: Pydantic AI
+- **Why Chosen**: Pydantic AI standardizes model parameters, system prompts, tool schemas, and structured output formatting. It enforces strict type-safety at the LLM interface boundary using Pydantic v2 validation.
+- **Alternatives Considered**: 
+  - *Instructor*: A lightweight library for structured extraction but lacks agentic wrapper classes, tool registry utilities, and prompt coordination utilities.
+  - *Custom JSON Schema Prompts*: Hard to maintain, brittle, and prone to parsing errors when models output malformed JSON.
+- **Trade-offs**: Restricts the system to Python. Upgrading Pydantic versions requires careful alignment with other ecosystem libraries.
+- **Scalability**: Zero performance overhead during execution. Type checking and validation occur instantly in native Rust compiled code under Pydantic v2.
+
+### 1.3 Large Language Models: OpenAI Models
+- **Why Chosen**: We employ a Mixture of Models (MoM) approach. High-reasoning models (**o3-mini**) plan the research path and detect contradictions. Premium instruction-tuned models (**GPT-4o**) write section drafts and handle adversarial critiques. Fast models (**GPT-4o-mini**) extract raw facts from scraped web pages and format OCR results.
+- **Alternatives Considered**: 
+  - *Claude 3.5 Sonnet*: Exceptional writing capability, but lacks the native test-time reasoning compute of o-series models for planning.
+  - *Gemini 1.5 Pro*: Large context window but higher latency and inconsistent markdown formatting compliance under heavy reasoning loops.
+- **Trade-offs**: Lock-in to OpenAI's API. Rate limit ceilings can throttle concurrent operations under high tenant load.
+- **Scalability**: System is configured to route traffic to both primary OpenAI API servers and Azure OpenAI endpoints for load balancing, caching, and rate limit expansion.
+
+### 1.4 Search Infrastructure: Bing Search API + Exa
+- **Why Chosen**: The system routes general queries to the **Bing Search API** due to its massive, real-time web index. Specialized lookups for technical or clean-markdown documents are routed to **Exa**, which specializes in semantic retrieval of web pages pre-cleaned of advertising and navigation clutter.
+- **Alternatives Considered**: 
+  - *Google Search API*: Best-in-class indexing but strict daily quota limits and higher pricing.
+  - *Tavily*: Good for generic search results but less configurable than Bing API.
+- **Trade-offs**: Higher cumulative API costs. Exa requires a separate account and usage plan.
+- **Scalability**: Implements custom proxy routing and search caches to avoid query rate limits.
+
+### 1.5 Crawling & Scraping Infrastructure: Dockerized Headless Playwright
+- **Why Chosen**: Deep Research requires reading modern web applications that utilize single-page rendering (React, Vue, Angular). A containerized farm of **Playwright** workers simulates headless Chromium browsers to execute client-side Javascript, bypass simple bot detection, and extract clean text.
+- **Alternatives Considered**: 
+  - *Scrapy*: Fast, lightweight parser, but fails on modern client-side rendered websites.
+  - *Selenium*: Heavy memory footprint and slower load times compared to Playwright.
+- **Trade-offs**: Heavy CPU/RAM resource footprint per active scraping container.
+- **Scalability**: Crawlers run in stateless Docker containers managed via Kubernetes, scaling horizontally based on request queues.
+
+### 1.6 Databases & Storage Layers: PostgreSQL + S3
+- **Why Chosen**: **PostgreSQL** handles session states, agent logs, citation registries, and tenant configurations. **AWS S3** acts as the object store for scraped HTML pages, PDF uploads, and final report documents.
+- **Alternatives Considered**: 
+  - *DynamoDB*: Faster key-value store, but lacks SQL join capabilities needed to resolve citations across sections.
+- **Trade-offs**: Postgres requires active database pool connection management and read-replica replication configuration.
+- **Scalability**: RDS PostgreSQL scale via read-replicas, and S3 handles infinite concurrent write throughput.
+
+### 1.7 Vector Database: Qdrant
+- **Why Chosen**: **Qdrant** provides high-speed vector retrieval with advanced metadata payload filtering (enforcing tenant-level and session-level isolation). It supports hybrid search (combining dense embeddings and sparse BM25 indices).
+- **Alternatives Considered**: 
+  - *pgvector*: Good for unified Postgres storage, but lacks optimization for massive, multi-tenant vector sharding.
+  - *Pinecone*: Serverless vector DB, but lacks local Docker development workflows.
+- **Trade-offs**: Requires setting up and maintaining a separate database cluster.
+- **Scalability**: Qdrant shards collections horizontally across multiple nodes, matching cluster capacity with user load.
+
+### 1.8 Observability & Telemetry: Langfuse + OpenTelemetry + Datadog
+- **Why Chosen**: We deploy **Langfuse** for detailed LLM prompt tracing, cost tracking, and grading metrics. **OpenTelemetry** collects container-level metrics (CPU, RAM, DB connection speeds) and exports them to **Datadog** for centralized alerting.
+- **Alternatives Considered**: 
+  - *LangSmith*: Excellent trace logging, but expensive and lacks local self-hosting options for sensitive enterprise data.
+- **Trade-offs**: Instrumenting telemetry adds a minor network latency overhead to model calls.
+- **Scalability**: Langfuse traces are buffered asynchronously on workers and flushed in background threads to prevent blocking agent runs.
+
+---
+
+## 2. Module-by-Module Technical Design
+
+The system is structured as 15 decoupled modules. Each module is designed with defined inputs, outputs, workflows, and explicit failure modes.
+
+### Service-to-Service Workflow Diagram
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Gateway as API Gateway (FastAPI)
+    participant Auth as Auth & Tenant Isolation
+    participant JobMgr as Job Manager
+    participant DB as Postgres (State DB)
+    participant Worker as LangGraph Worker
+    participant Search as Search & Crawl API
+    participant LLM as OpenAI Engine
+    
+    User->>Gateway: Submit Research Request (Query & File Attachments)
+    Gateway->>Auth: Validate Tenant & Rate Limits
+    Auth-->>Gateway: Access Approved
+    Gateway->>JobMgr: Initialize Research Job
+    JobMgr->>DB: Write Initial State (Status: PENDING)
+    JobMgr-->>User: Return Job ID (e.g., job_9023)
+    
+    Note over Worker: Background Thread Picks Up Job
+    Worker->>DB: Update Status to RUNNING & Load Checkpoint
+    Worker->>LLM: Generate Research Plan (o3-mini)
+    LLM-->>Worker: Research Plan DAG
+    
+    loop Research Iterations
+        Worker->>Search: Execute Search Queries & Crawl Target Pages
+        Search-->>Worker: Cleaned Markdown & OCR Extracts
+        Worker->>LLM: Synthesize Evidence & Extract Claims (GPT-4o)
+        LLM-->>Worker: Factual Snippets
+    end
+    
+    Worker->>LLM: Draft Report & Format Citations (GPT-4o)
+    LLM-->>Worker: Structured Markdown Report
+    Worker->>DB: Save Final Report & Checkpoint (Status: COMPLETED)
+    User->>Gateway: Poll Status (job_9023)
+    Gateway->>DB: Retrieve Report
+    DB-->>User: Deliver Polished Final Report
+```
+
+---
+
+### Module 1: User Interface Layer
+- **Responsibilities**: Displays user dashboards, handles multi-format file uploads (drag-and-drop zone), renders streaming agent activity logs via WebSockets, and provides interactive Markdown report views.
+- **Inputs**: User prompt text, binary file uploads, WebSocket log events.
+- **Outputs**: API JSON requests, rendering Markdown text, download actions.
+- **Internal Workflow**: A React SPA displays real-time execution steps. It uploads files directly to S3 via pre-signed URLs, then submits the research query to the API gateway.
+- **Failure Modes & Mitigations**:
+  - *WebSocket Dropouts*: If the socket disconnects, the UI displays a warning banner and switches to HTTP polling of the `/jobs/{id}/status` endpoint.
+
+### Module 2: API Layer
+- **Responsibilities**: Gateway route routing, JSON request schema validation, tenant authentication verification, and job queue dispatching.
+- **Inputs**: HTTP requests (Bearer JWT, JSON payload).
+- **Outputs**: HTTP JSON responses (Access tokens, Job ID confirmation, execution status).
+- **Internal Workflow**: FastAPI routes validate payloads via Pydantic. The route checks the JWT via Auth0, verifies the tenant’s rate limits, writes a `PENDING` job entry in RDS, and dispatches a Celery task to Redis.
+- **Failure Modes & Mitigations**:
+  - *Database Connection Pool Exhaustion*: Uses SQLAlchemy connection pooling with connection pre-ping and recycling to clear dead threads.
+
+### Module 3: Orchestrator Layer
+- **Responsibilities**: Executes the LangGraph state machine, manages thread transitions, persists checkpoints, and coordinates model calls.
+- **Inputs**: Celery job event payload, session state JSON.
+- **Outputs**: Updated session state, worker dispatch commands.
+- **Internal Workflow**: Instantiates the `StateGraph`. The thread advances through nodes (Plan $\rightarrow$ Search $\rightarrow$ Scrape $\rightarrow$ Synthesize $\rightarrow$ Draft $\rightarrow$ QA). Checkpoints are saved to PostgreSQL on every transition.
+- **Failure Modes & Mitigations**:
+  - *Worker Timeout*: Celery automatically moves orphaned tasks back to the queue if a worker fails to send a heartbeat, prompting a checkpoint restore on another node.
+
+### Module 4: Planner Agent
+- **Responsibilities**: Evaluates user prompts, decomposes research questions, and structures the research plan Directed Acyclic Graph (DAG).
+- **Inputs**: User query, tenant configuration metadata, uploaded file index keys.
+- **Outputs**: Dynamic execution plan (JSON DAG of research objectives).
+- **Internal Workflow**: Pydantic AI calls o3-mini. The model analyzes the query, extracts key research concepts, defines sub-questions, and maps task dependencies.
+- **Failure Modes & Mitigations**:
+  - *Planning Loops*: A maximum recursion counter prevents the planner agent from looping if research paths are circular.
+
+### Module 5: Research Agent
+- **Responsibilities**: Gathers section-specific evidence clusters, identifies information gaps, and writes section drafts.
+- **Inputs**: Outline node spec, aggregated evidence package.
+- **Outputs**: Section Markdown text containing inline citation tags.
+- **Internal Workflow**: Passes the evidence package and prior section summaries to a GPT-4o Pydantic AI agent to generate the section draft.
+- **Failure Modes & Mitigations**:
+  - *Hallucination Gaps*: The agent is prompt-restricted to use only provided facts. If facts are missing, it must return a search request rather than fabricating claims.
+
+### Module 6: Search Agent
+- **Responsibilities**: Formulates search queries, retrieves search index URLs, and scrapes raw web page content.
+- **Inputs**: Target search concept descriptions, filter parameters.
+- **Outputs**: Structured Markdown scraping logs, image URLs.
+- **Internal Workflow**: GPT-4o-mini expands terms into Bing Search queries. It queries the API, dispatches Playwright containers to extract text, and converts HTML to Markdown.
+- **Failure Modes & Mitigations**:
+  - *IP Address Block*: Implements rotating proxy servers and HTTP request header randomization to bypass bot prevention layers.
+
+### Module 7: Document Processing Pipeline
+- **Responsibilities**: Ingests and extracts clean structured text and image descriptions from PDFs, DOCX, PPTX, XLSX, CSV, and image files.
+- **Inputs**: S3 Object keys.
+- **Outputs**: Normalized Markdown text, structured CSV tables, OCR JSON.
+- **Internal Workflow**: PDF parsing runs through Marker/OCR containers. Excel and CSV files are parsed via Pandas, and images are processed via GPT-4o Vision API.
+- **Failure Modes & Mitigations**:
+  - *OutOfMemory (OOM) on Large Uploads*: Large spreadsheets are parsed page-by-page using streaming buffers to keep container memory usage under 1GB.
+
+### Module 8: Retrieval Layer
+- **Responsibilities**: Indexes document chunks, manages embeddings, and executes hybrid search retrieval.
+- **Inputs**: Semantic retrieval query, session filter keys.
+- **Outputs**: Top-K context chunks.
+- **Internal Workflow**: Documents are chunked (using parent-child configurations) and embedded. Qdrant runs a hybrid dense/sparse search, and results are re-ranked using Cohere Rerank.
+- **Failure Modes & Mitigations**:
+  - *Empty Retrieval Results*: The system falls back to a broad BM25 keyword search if dense vector cosine similarity scores fall below 0.65.
+
+### Module 9: Knowledge Layer
+- **Responsibilities**: Identifies entities, maps relationships, and manages the session-specific Knowledge Graph.
+- **Inputs**: Fact chunks, extraction templates.
+- **Outputs**: Entity map paths, neighborhood network paths.
+- **Internal Workflow**: Extracts entity-relation triplets `(Subject, Predicate, Object)` and updates a Neo4j database or a local PostgreSQL adjacency index.
+- **Failure Modes & Mitigations**:
+  - *Entity Duplication*: Run fuzzy string matching and vector distance lookups to collapse variant names (e.g., "ASML Holding" and "ASML") into a single node.
+
+### Module 10: Verification Layer
+- **Responsibilities**: Performs claim extraction, checks cross-source alignment, and detects factual contradictions.
+- **Inputs**: Section drafts, raw source snippets.
+- **Outputs**: Entailment matrix, contradiction warnings.
+- **Internal Workflow**: GPT-4o-mini extracts claims. A DeBERTa-v3 NLI model checks each claim against cited snippets. Claims with contradiction labels trigger warning flags.
+- **Failure Modes & Mitigations**:
+  - *NLI Entailment Drift*: A secondary check routes disputed contradictions to o3-mini for final arbitration.
+
+### Module 11: Report Generation Layer
+- **Responsibilities**: Combines section drafts, structures layout formatting, and applies global narrative smoothing.
+- **Inputs**: Approved section drafts, table of contents specifications.
+- **Outputs**: Final Markdown report.
+- **Internal Workflow**: Stitches sections, runs a global editor pass using GPT-4o to remove duplicate introductions, and verifies headings match Markdown specifications.
+- **Failure Modes & Mitigations**:
+  - *Token Limits on Assemble*: If a report exceeds output token limits, the assembler processes and edits transitions between chapters in parallel blocks.
+
+### Module 12: Citation Engine
+- **Responsibilities**: Registers sources, maps inline brackets to reference citations, and formats bibliography sections.
+- **Inputs**: Document metadata, URL strings, inline bracket tags.
+- **Outputs**: Clicking citation links, final Reference section.
+- **Internal Workflow**: Manages references in PostgreSQL. Maps temporary tags (e.g., `[CIT-X]`) to permanent formatted markers (e.g., `[1]`) linking to S3 cached pages.
+- **Failure Modes & Mitigations**:
+  - *Dead Source Link*: If the target URL returns a `404` error, the engine redirects the citation hyperlink to the S3 object store web page snapshot.
+
+### Module 13: Evaluation Layer
+- **Responsibilities**: Assesses output quality, checks factuality, and reports regression scores in CI/CD pipeline.
+- **Inputs**: Draft reports, reference answers.
+- **Outputs**: Evaluation scorecard (Groundedness, Readability, Recall).
+- **Internal Workflow**: Automates DeepEval or Promptfoo execution in GitHub Actions, comparing draft reports against verified test sets.
+- **Failure Modes & Mitigations**:
+  - *High Evaluation API Costs*: Executes full evaluation only on a representative subset of test queries during developer commits.
+
+### Module 14: Monitoring Layer
+- **Responsibilities**: Telemetry tracking, system health logging, and cost quota alerting.
+- **Inputs**: OpenTelemetry traces, Langfuse logs.
+- **Outputs**: Metric charts, Slack alert notifications.
+- **Internal Workflow**: Collects container performance via Datadog. Traces model prompts and token metrics using Langfuse.
+- **Failure Modes & Mitigations**:
+  - *Monitoring Failure*: Telemetry exports execute asynchronously; if the observability server goes offline, trace packets are dropped to prevent application blocking.
+
+### Module 15: Feedback Loop
+- **Responsibilities**: Captures user edits, logs manual ratings, and compiles prompt alignment datasets.
+- **Inputs**: User interface ratings, edit diff logs.
+- **Outputs**: Fine-tuning prompt data sets.
+- **Internal Workflow**: Diff comparisons track user changes to generated reports. Diffs are stored in PostgreSQL for prompt tuning cycles.
+- **Failure Modes & Mitigations**:
+  - *Empty User Feedback*: Implements automatic tracking of report export and sharing actions to infer document quality.
+
+---
+
+## 3. Long-Running Job & Lifecycle Management
+
+Because Deep Research jobs run asynchronously and take several minutes to resolve, managing job state, progress, and failure recovery is a core production requirement.
+
+### Job Execution Pipeline Diagram
+
+```mermaid
+graph TD
+    Start([Job Request Received]) --> AuthCheck{"Tenant & Rate Limit Check"}
+    AuthCheck -- "Denied" --> FailEnd["Return Error Response"]
+    AuthCheck -- "Approved" --> InitDb["Write Job State to Postgres (PENDING)"]
+    InitDb --> PushQueue["Push Job ID to Redis Queue"]
+    PushQueue --> WorkerPickup["Worker Pulls Job ID from Queue"]
+    
+    subgraph ExecutionLoop["Execution Loop (LangGraph State Machine)"]
+        WorkerPickup --> LockJob["Set status to RUNNING & Acquire Lock"]
+        LockJob --> LoadState["Restore Checkpoint from Postgres"]
+        LoadState --> ExecPlan["Generate Execution Plan (o3-mini)"]
+        
+        ExecPlan --> SplitTasks["Decompose Tasks into LangGraph Branches"]
+        SplitTasks --> FetchData["Search, Crawl & Extract Data (Playwright/Exa)"]
+        FetchData --> SaveCheckpoint["Save Checkpoint & Evidence State"]
+        
+        SaveCheckpoint --> Evaluator{"Evaluate Evidence Completeness"}
+        Evaluator -- "Gaps Detected" --> SplitTasks
+        Evaluator -- "Complete" --> Assemble["Generate Report Draft (Claude/GPT-4o)"]
+    end
+    
+    Assemble --> QA["Run Fact-Check & Verification pipeline"]
+    QA --> ReleaseLock["Save Final Report, Set status to COMPLETED & Release Lock"]
+    ReleaseLock --> Deliver["Stream Complete Notification via WebSockets"]
+
+    %% Styling
+    classDef default fill:#1f2937,stroke:#374151,stroke-width:1px,color:#f3f4f6;
+    classDef highlight fill:#0369a1,stroke:#0284c7,stroke-width:2px,color:#fff;
+    class SaveCheckpoint,ReleaseLock highlight;
+```
+
+### Job Queues & Background Workers
+The background processing stack uses **Celery** with **Redis** as a message broker and **PostgreSQL** as a results storage backend.
+- **Worker Allocation**: Celery workers run inside containerized Kubernetes pods. KEDA (Kubernetes Event-driven Autoscaling) monitors the queue length in Redis and dynamically spins up new worker pods to handle execution surges.
+- **Task Isolation**: Workers execute research graph nodes inside discrete sandbox tasks, ensuring that a memory leak in Playwright does not crash the core worker process.
+
+### Checkpointing & State Persistence
+LangGraph’s `PostgresSaver` class automatically serializes the application state at the end of each node transaction.
+
+```sql
+CREATE TABLE graph_checkpoints (
+    thread_id UUID NOT NULL,
+    checkpoint_id UUID NOT NULL,
+    parent_checkpoint_id UUID,
+    state_json JSONB NOT NULL,
+    metadata_json JSONB NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (thread_id, checkpoint_id)
+);
+CREATE INDEX idx_checkpoint_thread ON graph_checkpoints (thread_id, created_at DESC);
+```
+
+This checkpoint stores:
+1. The accumulated research plan and completed nodes.
+2. The citation registry containing all active source mappings.
+3. The context buffer (evidence packages and running summaries).
+
+### Retry Mechanisms & Failure Recovery
+- **Model API Calls**: Every API request is managed through a tenacity-wrapped helper. If a `502 Bad Gateway` or `429 Too Many Requests` is returned, the call retries with exponential backoff and random jitter:
+
+$$\text{Delay} = \text{Min}(10, 2^{\text{attempt}} \times \text{Base Delay}) + \text{Uniform}(0, 1)$$
+
+- **Worker Failure Recovery**: If a worker pod crashes mid-execution, Celery's `visibility_timeout` expires. The task is returned to the queue, and the next active worker restores the state using `graph_checkpoints` and resumes execution.
+
+### Human-in-the-Loop (HITL) Approval
+For high-stakes tasks, the orchestrator configures checkpoint interrupts:
+1. When the Planner Agent outputs the research DAG, the orchestrator sets the job state to `AWAITING_APPROVAL` in Postgres and pauses execution.
+2. The UI receives a WebSocket event. The user reviews the plan and approves or edits nodes.
+3. Once approved, the UI posts to `/api/v1/jobs/{id}/resume`, which triggers `graph.resume()` and resumes execution on a worker thread.
+
+### Progress Tracking
+A user-facing progress percentage is computed programmatically based on the research state:
+
+$$\text{Progress \%} = \left( \frac{\text{Completed DAG Nodes}}{\text{Total Planned Nodes}} \times 80 \right) + \left( \frac{\text{Drafted Chapters}}{\text{Total Planned Chapters}} \times 15 \right) + \left( \frac{\text{QA Checks Completed}}{\text{Total QA Checks}} \times 5 \right)$$
+
+This metric is recalculated on every state transition and pushed to the UI via WebSockets.
+
+---
+
+## 4. Performance & Token Optimization Strategies
+
+Deep Research workloads process millions of tokens across hundreds of source pages, making cost and latency optimization critical.
+
+### 4.1 Model Routing
+The system dispatches models dynamically based on task complexity:
+- **Planning, Structuring, and Critique**: Routed to **o3-mini** or **o1** to leverage reasoning capabilities.
+- **Drafting and Synthesis**: Routed to **GPT-4o** to ensure high-quality markdown generation and cohesive narrative structure.
+- **Scraping, Fact Extraction, and QA Parsing**: Routed to **GPT-4o-mini** to leverage low-cost, fast token throughput.
+
+### 4.2 Semantic Cache
+All search queries and scraped web results are indexed in Redis.
+- **Search Caching**: Before dispatching to Bing, the Search Agent computes the embedding of the query using `text-embedding-3-small` and performs a cosine similarity lookup against cached query keys. If similarity $\ge 0.95$, the system returns the cached search results, reducing Bing API costs to zero.
+- **Page Caching**: Scraped pages are stored in Redis using a SHA-256 hash of their URL. Subsequent scrape requests for the same URL within 24 hours load from Redis cache.
+
+### 4.3 Token Reduction & Context Compression
+Raw scraped pages contain massive token bloat (script tags, styling, navigation). The pipeline filters and compresses this text:
+- **HTML Cleanup**: Programmatically strips `<script>`, `<style>`, and navigation headers. Parses the DOM to extract clean Markdown text.
+- **Prompt Caching**: Structures prompts to place static instructions (writing styles, guidelines) first, allowing OpenAI’s Prompt Caching to reduce costs for repeating inputs by 50%.
+- **Text Compression**: Employs **LLMLingua** on the retrieved context chunks, removing low-information words before context window injection:
+
+$$\text{Compressed Context} = \text{LLMLingua}(\text{Raw Context}, \text{Rate}=0.6)$$
+
+### 4.4 Retrieval Optimization
+- **Parent-Child Chunking**: The system segments document sources into small child chunks (200 tokens) for vector similarity searches, but retrieves the larger parent chunk (1,000 tokens) for context injection. This ensures precise matching while preserving surrounding narrative context.
+- **Cohere Rerank**: A Qdrant retrieval pass fetches 100 candidate chunks. Cohere Rerank filters these down to the top 15 highest-relevance items, reducing the input context size by 85%.
+
+---
+
+## 5. Production, Security & DevOps Architecture
+
+### Infrastructure Layout Diagram
+
+```mermaid
+graph TD
+    subgraph PublicInternet["Public Internet"]
+        Client["Client Browser / App"] --> CDN["Cloudflare CDN & WAF"]
+    end
+
+    subgraph AWSVPC["AWS VPC (Multi-AZ Active-Passive Setup)"]
+        CDN --> ALB["Application Load Balancer"]
+        
+        subgraph EKSCluster["EKS Cluster (Kubernetes Containers)"]
+            ALB --> APISvc["API Microservice Pods (FastAPI)"]
+            APISvc --> TaskBroker["Celery Workers (LangGraph engine)"]
+            TaskBroker --> CrawlerFarm["Chrome Scraper Pods (Playwright Headless)"]
+        end
+        
+        subgraph MemoryCacheLayer["Memory Cache Layer"]
+            APISvc --> RedisCache[("ElastiCache Redis (Session Cache / Queue)")]
+            TaskBroker --> RedisCache
+        end
+        
+        subgraph PersistentDatabaseLayer["Persistent Database Layer"]
+            TaskBroker --> PostgresMaster[("RDS PostgreSQL Master")]
+            PostgresMaster --> PostgresReplica[("RDS PostgreSQL Read Replica")]
+            TaskBroker --> QdrantCluster[("Qdrant Vector DB Cluster")]
+        end
+        
+        subgraph DocumentBlobStorage["Document Blob Storage"]
+            TaskBroker --> S3Cache[("AWS S3 (Document Store & Page Caches)")]
+        end
+    end
+
+    %% Styling
+    classDef default fill:#1f2937,stroke:#374151,stroke-width:1px,color:#f3f4f6;
+    classDef database fill:#111827,stroke:#1d4ed8,stroke-width:2px,color:#fff;
+    class RedisCache,PostgresMaster,PostgresReplica,QdrantCluster,S3Cache database;
+```
+
+### Multi-Region Deployment & Disaster Recovery
+The system is deployed in an **Active-Passive cross-region configuration** (e.g., primary `us-east-1`, failover `us-west-2`):
+- **Database Replication**: RDS PostgreSQL operates in a Multi-AZ cluster with cross-region replication.
+- **Object Storage**: S3 buckets are configured for Cross-Region Replication (CRR).
+- **Failover Routing**: Cloudflare load balancers perform health checks on the API Gateway; if the primary region goes offline, traffic is routed to `us-west-2` within 30 seconds.
+- **RTO/RPO Targets**:
+  - Recovery Time Objective (RTO): $\le 10\text{ minutes}$.
+  - Recovery Point Objective (RPO): $\le 1\text{ minute}$.
+
+### Rate Limiting & Quotas
+To protect the system against resource exhaustion, a Redis-backed token bucket rate limiter is enforced at the API Gateway:
+- **API Gate**: FastAPI Rate Limiter tracks IP addresses and API keys.
+- **Model API Rate Limits**: A custom token bucket class tracks current TPM (Tokens Per Minute) and RPM (Requests Per Minute) consumption per tenant, dynamically throttling execution queues when usage approaches 90% of model provider limits.
+
+### Tenant Isolation
+- **Relational Data**: PostgreSQL implements Row-Level Security (RLS) on all session, state, and citation tables based on a `tenant_id` context parameter set at execution time:
+
+```sql
+ALTER TABLE graph_checkpoints ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_policy ON graph_checkpoints
+    FOR ALL USING (tenant_id = current_setting('app.current_tenant_id'));
+```
+
+- **Vector Partitioning**: Qdrant partitions vector data. Every search query payload must include a filter matching the tenant ID, preventing data leakage between clients:
+
+```json
+{
+  "filter": {
+    "must": [
+      { "key": "tenant_id", "match": { "value": "tenant-uuid-1029" } }
+    ]
+  }
+}
+```
+
+### Cost Monitoring
+The system logs every LLM API transaction with metadata tags (`tenant_id`, `job_id`, `model_name`, `input_tokens`, `output_tokens`).
+- **Billing Metrics**: Celery workers push usage logs to a billing table in PostgreSQL, allowing administrators to monitor actual per-job infrastructure costs.
+- **Auto-Kill Quotas**: If a research job's cumulative model cost exceeds a tenant-configured limit (e.g., \$5.00), the Orchestrator raises a `QuotaExceeded` exception, saves the current checkpoint, and pauses the run.
+
+### Security Architecture
+- **Auth**: User authentication uses OpenID Connect (OIDC) through Auth0.
+- **Network Boundaries**: EKS pods communicate within private VPC subnets. Databases and Redis instances are inaccessible from the public internet.
+- **Key Storage**: All secrets (API keys, database credentials) are stored in AWS Secrets Manager and mounted into pods as environment variables.
+
+### CI/CD, A/B Testing & Continuous Evaluation
+- **CI/CD Pipeline**: GitHub Actions runs lints and unit tests on pull requests. The pipeline triggers a headless test run on a 50-query golden dataset, evaluating changes using **Promptfoo**. PRs are blocked if factual correctness scores drop by more than 2%.
+- **A/B Testing**: Feature flags managed via LaunchDarkly route a percentage of jobs to experimental prompt configurations.
+- **Model Versioning**: Prompt templates are versioned in git and tagged with the target model version (e.g., `prompts/v2.1_gpt4o.json`). Swapping models requires updating this tag, ensuring version compatibility.
+
+---
+
+
+# Part M: Production Evaluation, Observability & Operational Runbook
+
+To operate a Deep Research system that serves millions of users, engineering teams must deploy a rigorous telemetry, continuous evaluation, and debugging infrastructure. This section provides the implementation runbook for monitoring and evaluating our custom agent system in production.
+
+## Metric Collection Architecture Diagram
+
+```mermaid
+graph TD
+    subgraph AppContainers["Application Containers (FastAPI & Celery)"]
+        App["Research Agent Instance"] --> OTEL["OpenTelemetry SDK"]
+        App --> LangfuseSDK["Langfuse Python SDK"]
+    end
+
+    subgraph TelemetryCollection["Telemetry Collection & Routing"]
+        OTEL --> OTELCollector["OpenTelemetry Collector"]
+        LangfuseSDK --> LangfuseSaaS["Langfuse Server (SaaS / Self-Hosted)"]
+    end
+
+    subgraph MonitoringStore["Metric Storage Layers"]
+        OTELCollector -- "System Metrics" --> Prometheus[("Prometheus TSDB")]
+        OTELCollector -- "Distributed Traces" --> Jaeger[("Jaeger Trace DB")]
+        Prometheus --> Grafana["Grafana Dashboards"]
+        Jaeger --> Grafana
+    end
+
+    %% Styling
+    classDef default fill:#1f2937,stroke:#374151,stroke-width:1px,color:#f3f4f6;
+    classDef database fill:#111827,stroke:#1d4ed8,stroke-width:2px,color:#fff;
+    class Prometheus,Jaeger,LangfuseSaaS database;
+```
+
+---
+
+## 1. Evaluation Framework
+
+Measuring the quality of long-form, multi-source research reports is highly complex. A simple character-match or single-evaluator prompt is insufficient. We deploy a multi-dimensional, automated evaluation pipeline.
+
+### Evaluation Pipeline Diagram
+
+```mermaid
+graph TD
+    Trigger([CI/CD Pull Request or Scheduled Run]) --> DatasetLoader["Dataset Loader: Fetch Golden Test Set (50 Queries)"]
+    DatasetLoader --> ParallelRunner["Parallel Test Runner (Promptfoo / DeepEval)"]
+    
+    subgraph EvaluationRunners["Evaluation Runners & Metrics Processing"]
+        ParallelRunner --> ExecRun["Execute Deep Research Graph run"]
+        ExecRun --> ReportGen["Report Generated"]
+        
+        ReportGen --> GroundCheck["Groundedness Evaluator (NLI entailment test)"]
+        ReportGen --> CitationCheck["Citation Validity Evaluator (Regex check)"]
+        ReportGen --> HallucinationCheck["Hallucination Evaluator (factual claim test)"]
+        ReportGen --> RecallCheck["Completeness & Coverage Evaluator (keyword map)"]
+    end
+
+    GroundCheck --> ScoreAggregator["Score Aggregator & Report Compiler"]
+    CitationCheck --> ScoreAggregator
+    HallucinationCheck --> ScoreAggregator
+    RecallCheck --> ScoreAggregator
+
+    ScoreAggregator --> ThresholdGate{"Verify Scores Pass Gate"}
+    ThresholdGate -- "Pass" --> ReleaseApprove["Approve Release / Deploy to Prod"]
+    ThresholdGate -- "Fail" --> FailNotify["Reject PR & Notify Team via Slack"]
+
+    %% Styling
+    classDef default fill:#1f2937,stroke:#374151,stroke-width:1px,color:#f3f4f6;
+    classDef highlight fill:#0369a1,stroke:#0284c7,stroke-width:2px,color:#fff;
+    class ThresholdGate,ReleaseApprove highlight;
+```
+
+### 1.1 Factual and Qualitative Evaluation Metrics
+
+To automate report auditing, the evaluation layer tracks 9 separate metrics on every execution run:
+
+1. **Accuracy**: Measures whether factual metrics and historical dates match known baseline datasets. Evaluated by checking specific entity values (e.g., "ASML 2024 EUV sales = 42 units") using regex and value checks.
+2. **Citation Quality**: Evaluates the citation integrity of the report. The engine parses all inline citations and verifies they map to the correct source snippet in the citation database:
+
+$$\text{Citation Quality} = \frac{\text{Inline Citations backed by Cited Snippet}}{\text{Total Inline Citations in Report}}$$
+
+3. **Source Diversity**: Measures the concentration of sources in the report to ensure the agent did not rely entirely on a single website:
+
+$$\text{Source Diversity} = 1 - \sum_{i=1}^{N} (p_i)^2$$
+
+Where $p_i$ is the proportion of total citations pointing to domain $i$. A score close to 1.0 indicates high diversity.
+4. **Hallucination Rate**: Calculated as the percentage of claims in the report that are labeled as `Contradiction` or `Neutral` when checked against the evidence store using an NLI model:
+
+$$\text{Hallucination Rate} = \frac{\text{Unverified Claims}}{\text{Total Claims in Report}}$$
+
+5. **Completeness**: Compares the final report sections against the planner's original DAG objectives, verifying that all sub-questions were addressed.
+6. **Relevance**: Cosine similarity between the user's initial prompt embedding and the generated executive summary, ensuring the report addresses the user's intent.
+7. **Coverage**: Checks if key industry terms and technical entities relevant to the topic are represented in the report text (using a pre-computed term bank).
+8. **Latency**: Tracks the execution duration of the job, mapping planning, scraping, retrieval, and writing steps.
+9. **Cost**: Sums the token costs across all models (o3-mini, GPT-4o, GPT-4o-mini) and API queries:
+
+$$\text{Cost} = \sum (\text{Input Tokens} \times \text{Rate}_{\text{in}}) + \sum (\text{Output Tokens} \times \text{Rate}_{\text{out}}) + (\text{Search Queries} \times \text{Search Cost})$$
+
+### 1.2 Evaluation Datasets & Benchmarks
+In production, standard open-source benchmarks (like MMLU or GPQA) do not accurately represent deep web-search capabilities. Instead, we construct:
+- **Offline Golden Dataset**: A curated set of 50 complex, multi-step research questions (e.g., "Analyze the supply chain dependencies of TSMC’s 2nm lithography process between 2024 and 2026"). Each query is paired with a verified, human-written reference report containing a list of mandatory facts, verified source URLs, and key entities.
+- **Synthetic Query Expansion Suite**: On every release, a model generates 100 variations of standard queries to evaluate how robust the Planner Agent is against query phrasing changes.
+
+### 1.3 Judging Report Usefulness (Utility Rubric)
+A report can be factual but useless if it contains only superficial descriptions. The evaluation judge (GPT-4o) evaluates reports on a **Utility Rubric**:
+- *Information Density*: Ratio of specific entities (dates, numbers, product names) to total word count.
+- *Insight Depth*: Does the report synthesize facts to answer "why" and "what next" questions (e.g., drawing intermediate conclusions), or does it simply copy snippets?
+- *Contradiction Resolution*: When sources conflict, does the report outline both viewpoints with citations, or does it ignore the discrepancy?
+
+---
+
+## 2. Observability & Monitoring
+
+Deep Research agents execute hundreds of steps in parallel. When a user complains that a report is poor, developer teams need to know exactly which step failed.
+
+### Monitoring Architecture Diagram
+
+```mermaid
+graph TD
+    subgraph TelemetryAgents["System Telemetry Agents"]
+        K8sPod["Kubernetes Pod Metrics (CPU/RAM)"] --> Telegraf["Telegraf Collector"]
+        TaskQueue["Celery Queue Depth Tracker"] --> Telegraf
+    end
+
+    subgraph LLMTelemetry["LLM Application Telemetry"]
+        AgentTrace["LangGraph Agent States"] --> Phoenix["Arize Phoenix Server"]
+        ToolCall["Tool Execution Logs"] --> Phoenix
+        TokenCount["Token & Cost Logger"] --> Phoenix
+    end
+
+    Telegraf --> GrafanaCloud["Grafana Enterprise Cloud"]
+    Phoenix --> WeightsBiases["Weights & Biases (Experiment Tracking)"]
+    
+    GrafanaCloud --> OpsAlert["PagerDuty Alerts"]
+    WeightsBiases --> DeveloperDashboard["Developer Performance Dashboard"]
+
+    %% Styling
+    classDef default fill:#1f2937,stroke:#374151,stroke-width:1px,color:#f3f4f6;
+    classDef highlight fill:#0369a1,stroke:#0284c7,stroke-width:2px,color:#fff;
+    class GrafanaCloud,WeightsBiases highlight;
+```
+
+### 2.1 Metrics Monitored in Production
+
+- **Agent Execution Traces**: Every LangGraph node transition is tracked as a nested span, capturing input state, LLM parameters, output state, and execution duration.
+- **Tool Usage Metrics**: Tracks call counts, failure rates, and latencies for Playwright scrapers, Bing API searchers, and OCR parsers.
+- **Token & Cost Consumption**: Logs prompt and completion tokens per model call, allowing teams to monitor real-time API spending.
+- **Search and Retrieval Quality**: Monitors retrieval precision using Qdrant search feedback:
+  - Average cosine similarity of top-K chunks.
+  - Ratio of search results that are scraped successfully.
+- **Source Quality**: Logs domain reputations of scraped websites and counts the percentage of crawled pages that return `403 Forbidden` or `Captcha` blocks.
+
+### 2.2 Telemetry Tool Mapping
+
+#### Prometheus & Grafana
+- *Role in System*: Monitors infrastructure-level health.
+- *Production Metrics*: Prometheus collects container CPU/RAM usage, Celery queue depth, network I/O, database connection pool levels, and HTTP response latencies. Grafana displays real-time system dashboards and triggers alerts via PagerDuty when queues back up or scrapers fail.
+
+#### LangSmith / Langfuse
+- *Role in System*: LLM application trace auditing and cost monitoring.
+- *Production Metrics*: Langfuse traces prompt runs, visualizes LangGraph DAG paths, stores input/output JSON payloads, and logs exact dollar costs for every model request. Allows developers to review steps where agents encountered planning errors or logic loops.
+
+#### Arize Phoenix
+- *Role in System*: Real-time RAG evaluation and embedding space drift tracking.
+- *Production Metrics*: Phoenix runs continuous evaluations on RAG chunks, analyzing hallucination rates, document retrieval relevance, and QA system accuracy. It visualizes embedding clusters to identify topics where search relevance is decaying.
+
+#### Weights & Biases (W&B)
+- *Role in System*: Experiment tracking and prompt engineering evaluation.
+- *Production Metrics*: Logs evaluation runs when prompt templates or routing models are updated. W&B registers prompt changes, model versions, and evaluation scores, allowing teams to compare current performance against historical baselines.
+
+---
+
+## 3. Failure Analysis & Debugging
+
+When a Deep Research run fails or produces a low-quality report, developers need a systematic debugging process to identify the root cause.
+
+### Failure Tracing Flow Diagram
+
+```mermaid
+graph TD
+    StartCheck([Research Run Completed with Error or Bad Report]) --> PullTrace["Pull Trace Logs from Langfuse by Session ID"]
+    PullTrace --> ErrorNodeCheck{"Identify Error Node in LangGraph"}
+    
+    ErrorNodeCheck -- "Tool Node Failed" --> ToolFailCheck{"Determine Tool Failure Cause"}
+    ToolFailCheck -- "Playwright Timeout / Page Blocked" --> ScraperErr["Scraper Error: Trigger rotating proxy or user agent update"]
+    ToolFailCheck -- "Bing API Rate Limit" --> SearchErr["Search Error: Enable API key rotation & fallback to local cluster"]
+    ToolFailCheck -- "Marker OCR OOM" --> ParserErr["Parser Error: Implement smaller chunk parsing on worker nodes"]
+
+    ErrorNodeCheck -- "Reasoning Node Failed" --> LogicFailCheck{"Determine Logical Fail Cause"}
+    LogicFailCheck -- "Empty Search DAG" --> PlanErr["Planner Error: Improve planner system prompt & use o3-mini reasoning"]
+    LogicFailCheck -- "Section hallucination" --> WritingErr["Writer Error: Strict entailment validation in prompt & lower temp"]
+    LogicFailCheck -- "Empty context index" --> RetrievalErr["Retrieval Error: Adjust BM25/Dense RRF weight ratio"]
+
+    %% Styling
+    classDef default fill:#1f2937,stroke:#374151,stroke-width:1px,color:#f3f4f6;
+    classDef highlight fill:#0369a1,stroke:#0284c7,stroke-width:2px,color:#fff;
+    class ErrorNodeCheck,ToolFailCheck,LogicFailCheck highlight;
+```
+
+### 3.1 Failure Classifications
+
+Failing runs are categorized into two types:
+
+1. **System Failures (Infrastructure)**:
+   - *Scraper Timeout*: Headless browsers taking $>30\text{ seconds}$ to render.
+   - *Database Connection Limit*: postgres connection pool exhaustion.
+   - *Out of Memory (OOM)*: Parser workers crashing when loading a 500MB PDF.
+2. **Logical Failures (Agentic)**:
+   - *Planning Loop*: Planner Agent continually creates new sub-tasks without drafting text.
+   - *Hallucinated Citation*: Writer Agent links facts to a source ID that does not support the claim.
+   - *Retrieval Drift*: Reranker includes irrelevant context chunks, diluting the LLM's context window.
+
+### Debugging Workflow Diagram
+
+```mermaid
+graph TD
+    DetectBug([Bug Reported: Hallucination or Quality Decay]) --> ReplicateBug["Replicate Session: Load SQLite checkpoint locally"]
+    ReplicateBug --> InspectTrace["Inspect Agent Trace in Arize Phoenix / Langfuse"]
+    
+    InspectTrace --> TraceAnalysis["Identify Node with Score Decay (Cosine Similarity < 0.70)"]
+    
+    TraceAnalysis --> PromptTuning["Prompt Tuning: Modify node system instruction & add few-shot examples"]
+    TraceAnalysis --> ModelUpgrade["Model Swap: Route task from GPT-4o-mini to GPT-4o/o3-mini"]
+    TraceAnalysis --> RetrievalFix["Retrieval Tune: Adjust parent-child chunk sizes & Cohere Rerank count"]
+    
+    PromptTuning --> GoldenSuite["Execute Golden Suite Evaluator (Promptfoo)"]
+    ModelUpgrade --> GoldenSuite
+    RetrievalFix --> GoldenSuite
+    
+    GoldenSuite --> ScoreGate{"Check Groundedness Score >= 0.95"}
+    ScoreGate -- "Yes" --> CommitCode["Commit Code & Deploy Hotfix"]
+    ScoreGate -- "No" --> TraceAnalysis
+
+    %% Styling
+    classDef default fill:#1f2937,stroke:#374151,stroke-width:1px,color:#f3f4f6;
+    classDef highlight fill:#0369a1,stroke:#0284c7,stroke-width:2px,color:#fff;
+    class ScoreGate,CommitCode highlight;
+```
+
+### 3.2 Step-by-Step Debugging Runbook
+1. **Isolate the Session**: Retrieve the `session_id` or `job_id` from the customer report.
+2. **Pull the Execution Checkpoint**: Query the `graph_checkpoints` table using the `thread_id` and load the exact state JSON into a local Jupyter notebook development environment:
+
+```python
+from langgraph.checkpoint.postgres import PostgresSaver
+from my_app.graph import compile_workflow
+
+saver = PostgresSaver(conn)
+config = {"configurable": {"thread_id": "session-uuid-9921"}}
+state = saver.get(config)
+```
+
+3. **Trace LLM Call Tree**: Load the Langfuse trace ID. Locate the exact node that failed or returned a quality score $< 0.85$.
+4. **Inspect Node Input/Output**: Examine the input context window payload and the generated model response.
+   - If the input context was missing relevant facts, the issue lies in the **Retrieval Layer** or the **Search Agent**.
+   - If the input context was correct but the output contained inaccuracies, the issue lies in the **Model Parameter Configuration** (e.g., temperature too high) or the **System Prompt**.
+5. **Formulate & Test Hotfix**: Adjust the prompt template, add few-shot training examples, or modify the parent-child chunking configuration. Run the single isolated checkpoint locally to verify the output meets quality standards.
+6. **Execute Regression Tests**: Execute the golden evaluation suite via Promptfoo. If the overall suite scores pass the threshold, commit the changes to main.
+
+---
+
+## 4. Final System Blueprint & Deliverable
+
+This section synthesizes the complete, production-grade architectural design for our Deep Research system, serving as the definitive engineering blueprint for building the system from scratch.
+
+### 4.1 System & Agent Architecture Design
+The architecture is structured as a decoupled multi-agent state machine built on **LangGraph**. The system runs on stateless background workers, utilizing an active-passive PostgreSQL database cluster for checkpoint serialization and session metadata storage.
+
+- **Orchestration Model**: Graph-based event-driven loop with explicit node checks.
+- **Memory Infrastructure**: Local SQLite checkpointers for rapid developer validation; PostgreSQL checkpointers for production high-availability clusters.
+- **Multi-Agent Coordination**: Asynchronous task router dispatching planning, searching, scraping, and drafting jobs to specialized agent workers.
+
+### 4.2 Production Stack & Deployment Strategy
+
+| Component | Recommended Technology | Alternatives Considered | Trade-offs & Costs | Scaling Limits |
+|:---|:---|:---|:---|:---|
+| **Graph Orchestration** | **LangGraph** | Custom state machine, AutoGen | Precise control over loops. Requires manual schema validation. Cost: \$0 infrastructure fees. | Scales horizontally with Celery. |
+| **Type Safety Layer** | **Pydantic AI** | Instructor, raw prompts | typed agent boundaries. Restricted to Python ecosystems. Cost: \$0. | Negligible runtime latency overhead. |
+| **Model Routing** | **o3-mini (Plan)** + **GPT-4o (Draft)** + **GPT-4o-mini (Scrape)** | Claude 3.5 Sonnet, Gemini 1.5 Pro | Minimizes API costs by 65%. Locked to OpenAI APIs. Cost: \$5.00 - \$15.00/M tokens for o-series. | Quota rate limits (RPM/TPM). |
+| **Vector DB** | **Qdrant** | pgvector, Milvus | Fast hybrid retrieval. Requires maintaining a separate cluster. Cost: ~\$100/month for cluster instance. | Horizontal sharding across nodes. |
+| **Search Gateway** | **Bing Search API + Exa** | Google Search API, Tavily | Broad web coverage + parsed markdown. High API cost. Cost: \$3.00/1k Bing queries; \$10.00/1k Exa. | API rate limit bounds. |
+| **Telemetry System** | **Langfuse + Datadog** | LangSmith, Prometheus + Grafana | LLM trace audits + system infrastructure APM monitoring. High setup complexity. Cost: Managed SaaS rates. | Log export rate limits. |
+
+### 4.3 Data Pipeline & Ingest Flow
+1. **Ingest Phase**: Files are uploaded directly to S3 via pre-signed URL uploads. Headless Playwright containers scrape targeted webpages, converting HTML to clean Markdown text.
+2. **Parsing Phase**: Marker/OCR processes PDFs. Spreadsheet data is parsed page-by-page. GPT-4o Vision processes images.
+3. **Retrieval Phase**: Document chunks are stored in Qdrant with tenant UUID payload partitions. Retrieval executes dense/sparse hybrid searches re-ranked using Cohere Rerank.
+4. **Drafting Phase**: Section Writer agents generate drafts section-by-section. An NLI verification pipeline checks citations for hallucinations.
+5. **Smoothing Phase**: The final report assembler resolves stylistic drift and outputs the polished Markdown document to S3.
+
+### 4.4 Scalability and Operational Runbook
+- **Infrastructure**: EKS Kubernetes container clusters autoscaled using KEDA queue metrics.
+- **Rate Limit Resilience**: Token bucket rate limiters in Redis route requests across backup APIs.
+- **Tenant Isolation**: Relational tables enforce Row-Level Security (RLS) based on `tenant_id` claims, and Qdrant queries include matching metadata payload filters.
+- **Evaluation Gate**: Pull requests trigger automated Promptfoo runs on a 50-query golden dataset, blocking code merges if correctness scores decay by $>2\%$.
 
 ---
 
