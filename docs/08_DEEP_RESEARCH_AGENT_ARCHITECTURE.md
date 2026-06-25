@@ -1,7 +1,7 @@
 # Deep Research Agent: Production-Grade Architecture & Engineering Reference
 
-> **Document Version:** 1.2.0  
-> **Last Updated:** June 23, 2026  
+> **Document Version:** 3.0.0  
+> **Last Updated:** June 25, 2026  
 > **Author:** TejasH MistrY  
 > **Document Number:** 08 (Doc 8)
 
@@ -95,6 +95,40 @@
     - [5. Confidence Scoring](#5-confidence-scoring)
     - [6. Evidence-Based Reasoning](#6-evidence-based-reasoning)
     - [Verification Pipeline Diagram](#verification-pipeline-diagram)
+12. [Part J: Report Generation](#part-j-report-generation)
+    - [1. Outline Generation](#1-outline-generation)
+    - [2. Evidence Aggregation](#2-evidence-aggregation)
+    - [3. Citation Management](#3-citation-management)
+    - [4. Draft Generation](#4-draft-generation)
+    - [5. Reflection Loops](#5-reflection-loops)
+    - [6. Self-Critique Systems](#6-self-critique-systems)
+    - [7. Quality Assurance Pipelines](#7-quality-assurance-pipelines)
+    - [Report Generation Pipeline Diagram](#report-generation-pipeline-diagram)
+    - [Citation Workflow Diagram](#citation-workflow-diagram)
+    - [End-to-End Evidence-to-Report Flow Diagram](#end-to-end-evidence-to-report-flow-diagram)
+13. [Part K: Technology Stack Analysis](#part-k-technology-stack-analysis)
+    - [1. Large Language Models (LLMs)](#1-large-language-models-llms)
+    - [2. Agent Frameworks](#2-agent-frameworks)
+    - [3. Search Infrastructure](#3-search-infrastructure)
+    - [4. Databases & Storage Layers](#4-databases--storage-layers)
+    - [5. Vector Databases & Embeddings](#5-vector-databases--embeddings)
+    - [6. Orchestration & Coordination Layers](#6-orchestration--coordination-layers)
+    - [7. Observability & Logging Systems](#7-observability--logging-systems)
+    - [8. Evaluation & Benchmarking Systems](#8-evaluation--benchmarking-systems)
+    - [9. Production Comparison of ChatGPT, Perplexity, and Gemini Deep Research](#9-production-comparison-of-chatgpt-perplexity-and-gemini-deep-research)
+    - [10. ChatGPT Deep Research Stack & Workflow](#10-chatgpt-deep-research-stack--workflow)
+    - [11. Perplexity Deep Research Stack & Workflow](#11-perplexity-deep-research-stack--workflow)
+    - [12. Gemini Deep Research Stack & Workflow](#12-gemini-deep-research-stack--workflow)
+14. [Part L: Custom Production-Grade Deep Research Architecture Design](#part-l-custom-production-grade-deep-research-architecture-design)
+    - [1. Core Technology Stack Selection](#1-core-technology-stack-selection)
+    - [2. Module-by-Module Technical Design](#2-module-by-module-technical-design)
+    - [3. Long-Running Job & Lifecycle Management](#3-long-running-job--lifecycle-management)
+    - [4. Performance & Token Optimization Strategies](#4-performance--token-optimization-strategies)
+    - [5. Production, Security & DevOps Architecture](#5-production-security--devops-architecture)
+    - [High-Level System Architecture Diagram](#high-level-system-architecture-diagram)
+    - [Service-to-Service Workflow Diagram](#service-to-service-workflow-diagram)
+    - [Job Execution Pipeline Diagram](#job-execution-pipeline-diagram)
+    - [Infrastructure Layout Diagram](#infrastructure-layout-diagram)
 
 ---
 
@@ -1187,3 +1221,2214 @@ For a typical deep research run with a complexity score of $C = 8$:
 
 ## 2. Scraping and CAPTCHA Bypass Strategy
 Production scrapers route traffic through rotating residential proxy pools. For Javascript-heavy sites, headless browsers (Playwright) are run inside isolated Docker containers with WebGL and fingerprint spoofing enabled to bypass automated bot checks.
+
+
+---
+
+# Part E: Data Collection Infrastructure
+
+A Deep Research system must ingest information from radically different source types — from structured API responses to unstructured podcast audio — and normalize everything into a unified evidence representation. This section details the engineering behind each data collection pathway.
+
+## Data Collection Pipeline Diagram
+
+```mermaid
+graph TD
+    subgraph Search Engines
+        SE1[Google Custom Search API] --> Norm
+        SE2[Bing Web Search API] --> Norm
+        SE3[Tavily Search API] --> Norm
+        SE4[Exa Neural Search] --> Norm
+    end
+
+    subgraph Web Crawling
+        WC1[Playwright Headless Browser] --> HTMLParser[HTML Parser]
+        WC2[Scrapy Spider] --> HTMLParser
+        HTMLParser --> Norm
+    end
+
+    subgraph APIs
+        API1[REST APIs] --> JSONParser[JSON/XML Parser]
+        API2[GraphQL Endpoints] --> JSONParser
+        JSONParser --> Norm
+    end
+
+    subgraph News
+        NS1[RSS/Atom Feeds] --> FeedParser[Feed Parser]
+        NS2[NewsAPI / GDELT] --> FeedParser
+        FeedParser --> Norm
+    end
+
+    subgraph Academic
+        AC1[arXiv API] --> MetaParser[Metadata Parser]
+        AC2[Semantic Scholar API] --> MetaParser
+        AC3[PubMed E-utilities] --> MetaParser
+        MetaParser --> Norm
+    end
+
+    subgraph File Sources
+        FS1[PDF Files] --> DocPipeline[Document Pipeline]
+        FS2[Word Documents] --> DocPipeline
+        FS3[Excel / CSV] --> DocPipeline
+        FS4[PowerPoint] --> DocPipeline
+        DocPipeline --> Norm
+    end
+
+    subgraph Visual Media
+        VM1[Images] --> VisionPipeline[Vision Pipeline]
+        VM2[Charts & Infographics] --> VisionPipeline
+        VisionPipeline --> Norm
+    end
+
+    subgraph AV Media
+        AV1[Video Files] --> AVPipeline[AV Pipeline]
+        AV2[Audio Files] --> AVPipeline
+        AVPipeline --> Norm
+    end
+
+    Norm[Normalization Layer] --> Chunker[Semantic Chunker]
+    Chunker --> Embedder[Embedding Generator]
+    Embedder --> VectorDB[(Vector Database)]
+    Embedder --> RelDB[(Relational Metadata Store)]
+```
+
+---
+
+## 1. Search Engine Integration
+
+Search engines are the primary discovery mechanism for web-based evidence. A production system must support multiple engines to avoid single-provider dependency and to maximize coverage.
+
+### How It Works
+
+1. The Search Agent receives a set of optimized queries from the Planning Engine.
+2. Queries are dispatched in parallel across multiple search providers.
+3. Each provider returns a ranked list of URLs, titles, and snippets.
+4. Results are deduplicated by URL and merged into a unified candidate list.
+
+### Provider Comparison
+
+| Provider | Type | Latency | Cost per Query | Strengths | Limitations |
+|:---|:---|:---|:---|:---|:---|
+| **Google Custom Search** | Traditional | ~200ms | \$5/1000 queries | Largest index, highest recall | Rate limits, no deep web |
+| **Bing Web Search** | Traditional | ~150ms | \$3/1000 queries | Good news coverage, cheaper | Slightly smaller index |
+| **Tavily** | AI-native | ~800ms | \$1/1000 queries (basic) | Returns cleaned content, AI-optimized | Smaller index, newer service |
+| **Exa** | Neural | ~500ms | ~\$3/1000 queries | Semantic search, finds conceptually related pages | Can miss exact-match queries |
+| **SerpAPI** | Aggregator | ~1s | \$50/5000 queries | Wraps Google with structured output | Added latency, cost premium |
+
+### Architecture Decisions
+
+**Why multi-engine?** No single search engine indexes the entire web. Google dominates general web coverage (~90% market share), but Bing often surfaces different results for technical queries. Exa finds conceptually related pages that keyword-based engines miss entirely. Using 2-3 engines in parallel increases recall by 15-25% based on internal benchmarks.
+
+**Trade-offs**: Multi-engine increases cost linearly and requires deduplication logic. For budget-constrained deployments, Google alone provides the best single-provider coverage.
+
+**Scaling Limitation**: Google Custom Search is limited to 10,000 queries/day on the free tier and 100 queries/second on paid tiers. For high-volume production (millions of users), you need enterprise agreements or must rotate across multiple API keys.
+
+---
+
+## 2. Direct Web Crawling
+
+When search engine snippets are insufficient, the system must fetch and render full web pages.
+
+### Crawling Stack
+
+| Tool | Type | JS Rendering | Speed | Cost | Best For |
+|:---|:---|:---|:---|:---|:---|
+| **Playwright** | Headless browser | Full | Slow (~2-5s/page) | High (CPU/RAM) | JS-heavy SPAs, dynamic content |
+| **Puppeteer** | Headless browser | Full | Slow (~2-5s/page) | High | Chrome-specific rendering |
+| **Scrapy** | HTTP crawler | None | Fast (~100ms/page) | Low | Static HTML, bulk crawling |
+| **HTTPX** | Async HTTP client | None | Very Fast (~50ms) | Minimal | API-like endpoints, simple pages |
+| **Crawl4AI** | AI-optimized | Optional | Medium | Medium | LLM-ready output, markdown conversion |
+
+### Processing Flow
+
+1. **URL Intake**: Receive candidate URLs from search results.
+2. **Pre-flight Check**: Query `robots.txt` compliance, check URL against blocklists.
+3. **Fetch**: Use HTTPX for static pages; fall back to Playwright for JS-rendered pages.
+4. **Content Extraction**: Strip navigation, ads, headers, footers. Extract main body content.
+5. **Format Conversion**: Convert cleaned HTML to Markdown using libraries like `markdownify` or Jina Reader API.
+6. **Metadata Capture**: Record page title, publication date, author (if available), word count.
+
+### Anti-Bot Bypass Strategy
+
+Production crawlers face aggressive anti-bot measures:
+
+- **Rotating Residential Proxies**: Services like BrightData, Oxylabs, or SmartProxy route traffic through real residential IPs, making requests appear as genuine user traffic. Cost: \$8-15 per GB.
+- **Browser Fingerprint Randomization**: Playwright instances randomize User-Agent, viewport dimensions, WebGL renderer strings, and timezone to avoid detection.
+- **Request Rate Throttling**: Limiting requests to 1-3 per second per domain to avoid triggering rate limits.
+- **CAPTCHA Solving**: Services like 2Captcha or CapSolver handle CAPTCHAs programmatically. Cost: ~\$2-3 per 1000 CAPTCHAs.
+
+**Scaling Bottleneck**: Headless browsers consume 200-500MB RAM per instance. Running 100 concurrent Playwright instances requires 20-50GB RAM. At scale, this is managed via containerized browser pools (Kubernetes pods with auto-scaling).
+
+---
+
+## 3. Website Scraping
+
+Scraping is distinct from crawling in that it involves structured extraction of specific data elements from known page layouts.
+
+### Techniques
+
+- **CSS Selector Extraction**: Use `BeautifulSoup` or `parsel` to target specific DOM elements by class, ID, or tag path. Best for sites with stable HTML structure.
+- **XPath Extraction**: More powerful than CSS selectors for complex nested structures. Used by Scrapy natively.
+- **LLM-Powered Extraction**: For pages with unpredictable layouts, send the rendered HTML to an LLM (GPT-4o-mini) with extraction instructions. This is slower and more expensive but handles any layout.
+- **Readability Algorithms**: Libraries like `readability-lxml` or Mozilla Readability automatically identify the main article content, stripping boilerplate with high accuracy (>90% for news sites).
+
+### Trade-offs
+
+| Approach | Accuracy | Speed | Cost | Maintenance |
+|:---|:---|:---|:---|:---|
+| CSS/XPath selectors | Very high (for known sites) | Fast | Free | High (breaks when site changes) |
+| Readability algorithm | Good (~90%) | Fast | Free | Low |
+| LLM extraction | Excellent (~95%) | Slow | \$0.001-0.01/page | None |
+
+**Recommendation**: Use readability algorithms as the default. Fall back to LLM extraction when readability returns content shorter than 500 characters (indicating extraction failure).
+
+---
+
+## 4. API Integration
+
+Structured data from APIs provides the highest quality, most reliable information.
+
+### Common API Sources for Research
+
+| API | Data Type | Auth Required | Rate Limits | Cost |
+|:---|:---|:---|:---|:---|
+| **Wikipedia API** | Encyclopedic articles | No | 200 req/s | Free |
+| **Wikidata SPARQL** | Structured facts | No | Moderate | Free |
+| **Alpha Vantage** | Financial data | API key | 5 req/min (free) | Free-\$50/mo |
+| **World Bank API** | Economic indicators | No | Generous | Free |
+| **OpenWeatherMap** | Weather data | API key | 60 req/min | Free-\$40/mo |
+| **GitHub API** | Code repositories | OAuth | 5000 req/hr | Free |
+| **ClinicalTrials.gov** | Clinical trial data | No | Moderate | Free |
+
+### Processing
+
+API responses (JSON/XML) are parsed into structured schemas using Pydantic models. This ensures type safety and validation before the data enters the evidence pipeline:
+
+```python
+class APIEvidence(BaseModel):
+    source_api: str
+    endpoint: str
+    retrieved_at: datetime
+    data: Dict[str, Any]
+    freshness_hours: float
+    schema_version: str
+```
+
+**Why APIs over scraping?** APIs provide structured, versioned data with guaranteed schemas. They are faster, more reliable, and legally safer than scraping. Always prefer an API when one exists.
+
+---
+
+## 5. News Source Aggregation
+
+Real-time and recent news is critical for research on current events, market analysis, and emerging trends.
+
+### Discovery Channels
+
+- **RSS/Atom Feeds**: Most major news outlets publish RSS feeds. Parse with `feedparser` (Python). Check for new items every 5-15 minutes.
+- **NewsAPI**: Aggregates headlines from 150,000+ sources. Returns structured JSON with title, description, source, and publication date. Cost: Free (100 req/day) to \$449/mo (enterprise).
+- **GDELT Project**: Global event monitoring database. Provides real-time feeds of news events with geolocation, sentiment, and entity extraction built in. Free but massive data volume.
+- **Google News RSS**: Free feed of top stories by topic or keyword.
+
+### Processing Pipeline
+
+1. Fetch new articles from all feeds at configurable intervals.
+2. Deduplicate by URL and by content similarity (cosine similarity > 0.95 = duplicate).
+3. Extract article body using readability algorithms.
+4. Tag with publication timestamp, source authority score, and topic classification.
+
+**Trade-off**: RSS feeds are free but require polling. NewsAPI provides push-like convenience but at significant cost for high-volume usage.
+
+---
+
+## 6. Academic Database Access
+
+Academic papers are the gold standard for technical and scientific research. Production systems must integrate with multiple academic databases.
+
+### Database Comparison
+
+| Database | Coverage | API Quality | Full-Text Access | Cost |
+|:---|:---|:---|:---|:---|
+| **Semantic Scholar** | 200M+ papers | Excellent REST API | Abstracts only (links to full text) | Free |
+| **arXiv** | 2.4M+ preprints | Good API + bulk access | Full text (PDF/LaTeX) | Free |
+| **PubMed / PMC** | 36M+ biomedical | E-utilities API | Full text for open access | Free |
+| **Google Scholar** | Broadest coverage | No official API (scraping required) | Varies | Free (risky) |
+| **CrossRef** | 150M+ DOIs | Good REST API | Metadata only | Free |
+| **OpenAlex** | 250M+ works | Excellent API | Metadata + some full text | Free |
+
+### Recommended Strategy
+
+Use **Semantic Scholar** as the primary academic search engine (best API, good coverage, free). Supplement with **arXiv** for preprints and **PubMed** for biomedical topics. Use **OpenAlex** for citation network analysis and bibliometric data. Avoid Google Scholar scraping in production due to legal risks and aggressive anti-bot measures.
+
+### Citation Network Analysis
+
+Academic databases enable citation network traversal:
+- **Forward citations**: Who cited this paper? (Find newer work building on this research)
+- **Backward citations**: What does this paper cite? (Find foundational work)
+- **Co-citation analysis**: Papers frequently cited together likely address related topics.
+
+This is implemented using the Semantic Scholar `citations` and `references` endpoints, building a local citation graph in Neo4j or NetworkX for analysis.
+
+---
+
+## 7. File-Based Sources
+
+Users often upload documents for the research agent to analyze alongside web sources. The system must handle PDFs, Word docs, Excel files, PowerPoint presentations, and CSV datasets.
+
+### File Upload Pipeline
+
+1. **Ingestion**: Accept file uploads via API endpoint (max 100MB per file, configurable).
+2. **Type Detection**: Use `python-magic` or file extension mapping to determine MIME type.
+3. **Routing**: Dispatch to the appropriate processing pipeline (covered in Part F).
+4. **Indexing**: After processing, chunks are embedded and stored in a user-namespaced vector index.
+
+### Supported Formats
+
+| Format | Extensions | Parser | Max Size |
+|:---|:---|:---|:---|
+| PDF | `.pdf` | PyMuPDF, pdfplumber | 100MB |
+| Word | `.docx`, `.doc` | python-docx, antiword | 50MB |
+| Excel | `.xlsx`, `.xls` | openpyxl, xlrd | 50MB |
+| CSV | `.csv`, `.tsv` | pandas | 200MB |
+| PowerPoint | `.pptx` | python-pptx | 100MB |
+| Plain Text | `.txt`, `.md` | Direct read | 10MB |
+
+**Cost consideration**: File processing is CPU-intensive (especially PDF OCR). Budget 0.5-2 seconds per page for PDF processing, 100-500ms per slide for PowerPoint. At scale, use a task queue (Celery + Redis) to process files asynchronously.
+
+---
+
+## 8. Visual Media Processing
+
+Images, charts, graphs, infographics, and screenshots contain valuable data that text-only systems miss entirely.
+
+### Source Types and Processing
+
+**Photographs and Screenshots**:
+- Extract text using OCR (Tesseract, PaddleOCR).
+- Send to multimodal LLM (GPT-4o, Gemini) for scene description and context extraction.
+
+**Charts and Graphs**:
+- Use specialized chart extraction models: Google DePlot converts charts to data tables, Matcha extracts chart data with high accuracy.
+- Fall back to multimodal LLM with structured extraction prompts.
+
+**Infographics**:
+- Complex multi-element images require multimodal LLM analysis.
+- Extract text via OCR, then use the LLM to interpret the relationships between visual elements.
+
+**Diagrams (Architecture, Flow, UML)**:
+- Send to multimodal LLM with instructions to describe the diagram's structure, components, and relationships.
+- Output structured text or Mermaid diagram code.
+
+### Technology Comparison
+
+| Tool | Type | Accuracy | Speed | Cost |
+|:---|:---|:---|:---|:---|
+| **Tesseract** | OCR | Good (printed text) | Fast | Free |
+| **PaddleOCR** | OCR | Excellent (multi-lang) | Fast | Free |
+| **Google Document AI** | OCR + Layout | Excellent | Medium | \$1.50/1000 pages |
+| **GPT-4o Vision** | Multimodal LLM | Excellent (general) | Slow | \$5/1M input tokens |
+| **Gemini 2.0 Flash** | Multimodal LLM | Excellent | Fast | \$0.10/1M input tokens |
+| **DePlot** | Chart-to-table | Very Good | Fast | Free (self-hosted) |
+
+**Recommendation**: Use Gemini 2.0 Flash as the primary multimodal engine (best cost-performance ratio). Use Tesseract/PaddleOCR for batch text extraction. Use DePlot for chart-heavy research tasks.
+
+---
+
+## 9. Video & Audio Sources
+
+Videos (lectures, presentations, interviews) and audio (podcasts, earnings calls) contain rich information that is inaccessible to text-only pipelines.
+
+### Video Processing Pipeline
+
+1. **Download**: Use `yt-dlp` for YouTube/Vimeo. Accept direct uploads for other formats.
+2. **Audio Extraction**: Extract audio track using FFmpeg.
+3. **Transcription**: Transcribe audio to text using OpenAI Whisper (large-v3 model for best accuracy).
+4. **Frame Extraction**: Sample keyframes at configurable intervals (every 5-30 seconds).
+5. **Slide Detection**: For lecture/presentation videos, detect slide transitions using frame differencing algorithms. Extract unique slides as images.
+6. **Visual Analysis**: Send extracted slides/frames to multimodal LLM for content extraction.
+7. **Merge**: Combine transcript + visual content into a time-aligned evidence document.
+
+### Audio Processing Pipeline
+
+1. **Ingestion**: Accept MP3, WAV, M4A, FLAC formats.
+2. **Transcription**: Run through Whisper with timestamps.
+3. **Speaker Diarization**: Use `pyannote.audio` to identify distinct speakers and label transcript segments.
+4. **Topic Segmentation**: Split long transcripts into topic-based chunks using LLM analysis.
+
+### Technology Comparison
+
+| Tool | Function | Quality | Speed | Cost |
+|:---|:---|:---|:---|:---|
+| **Whisper large-v3** | Transcription | Best accuracy | 1x real-time (GPU) | Free (self-hosted) |
+| **Whisper turbo** | Transcription | Very Good | 8x real-time | Free (self-hosted) |
+| **AssemblyAI** | Transcription + diarization | Excellent | Real-time | \$0.37/hr |
+| **Deepgram** | Transcription | Very Good | Real-time | \$0.25/hr |
+| **pyannote.audio** | Speaker diarization | Good | 5x real-time | Free |
+
+**Scaling Limitation**: Whisper requires a GPU for real-time processing. Processing a 1-hour video takes approximately 1 hour on CPU but only 7-8 minutes on an A100 GPU. For production, GPU instances (\$1-3/hr on cloud) are required for acceptable latency.
+
+---
+
+## Data Collection Technology Summary
+
+| Source Type | Primary Tool | Fallback Tool | Typical Latency | Cost per Unit |
+|:---|:---|:---|:---|:---|
+| Search Engines | Tavily + Google | Bing, Exa | 200-800ms | \$0.001-0.005/query |
+| Web Pages | HTTPX + Readability | Playwright | 50ms-5s | \$0.001-0.05/page |
+| APIs | HTTPX async client | — | 50-500ms | Varies |
+| News Feeds | feedparser + NewsAPI | GDELT | 100ms-1s | Free-\$0.003/article |
+| Academic Papers | Semantic Scholar | arXiv, PubMed | 200-500ms | Free |
+| PDFs | PyMuPDF + pdfplumber | Azure Doc AI | 0.5-2s/page | Free-\$0.0015/page |
+| Images | Gemini 2.0 Flash | GPT-4o Vision | 1-3s | \$0.0001-0.005/image |
+| Video | Whisper + yt-dlp | AssemblyAI | 1-60min | Free-\$0.37/hr |
+| Audio | Whisper + pyannote | Deepgram | 1-15min | Free-\$0.25/hr |
+
+---
+
+# Part F: Document Understanding Pipeline
+
+Once raw documents are collected, they must be parsed, structured, and transformed into semantically meaningful chunks suitable for embedding, retrieval, and synthesis. This section details the processing pipeline for each document type.
+
+## Document Processing Pipeline Diagram
+
+```mermaid
+graph TD
+    subgraph PDF Pipeline
+        PDF[PDF File] --> PDFCheck{Scanned or Digital?}
+        PDFCheck -- Digital --> PDFText[Text Extraction - PyMuPDF]
+        PDFCheck -- Scanned --> PDFOCR[OCR - Tesseract/PaddleOCR]
+        PDFOCR --> PDFText
+        PDFText --> PDFLayout[Layout Analysis]
+        PDFLayout --> PDFTables[Table Extraction - pdfplumber]
+        PDFLayout --> PDFCite[Citation Extraction - GROBID]
+        PDFLayout --> PDFMeta[Metadata Extraction]
+        PDFTables --> PDFChunk[Semantic Chunker]
+        PDFCite --> PDFChunk
+        PDFMeta --> PDFChunk
+    end
+
+    subgraph Word Pipeline
+        DOCX[Word Document] --> DOCXParse[python-docx Parser]
+        DOCXParse --> DOCXHeading[Heading Hierarchy]
+        DOCXParse --> DOCXTable[Table Extraction]
+        DOCXParse --> DOCXImg[Embedded Image Extraction]
+        DOCXHeading --> DOCXChunk[Semantic Chunker]
+        DOCXTable --> DOCXChunk
+        DOCXImg --> VisionPipe[Vision Pipeline]
+    end
+
+    subgraph Excel Pipeline
+        XLSX[Excel / CSV] --> XLParse[openpyxl / pandas Parser]
+        XLParse --> XLSheet[Sheet Classification]
+        XLSheet --> XLHeaders[Header Detection]
+        XLHeaders --> XLStats[Statistical Analysis]
+        XLStats --> XLChunk[Structured Chunk Generator]
+    end
+
+    subgraph Image Pipeline
+        IMG[Image File] --> IMGOCR[OCR Engine]
+        IMG --> IMGVision[Multimodal LLM Analysis]
+        IMGOCR --> IMGMerge[Merge Text + Visual Context]
+        IMGVision --> IMGMerge
+        IMGMerge --> IMGChunk[Chunk Generator]
+    end
+
+    subgraph AV Pipeline
+        VID[Video] --> VIDAudio[Audio Extraction - FFmpeg]
+        VID --> VIDFrames[Keyframe Extraction]
+        VIDAudio --> VIDTranscript[Whisper Transcription]
+        VIDFrames --> VIDSlides[Slide Detection]
+        VIDTranscript --> VIDMerge[Time-Aligned Merge]
+        VIDSlides --> VIDMerge
+        VIDMerge --> VIDChunk[Chunk Generator]
+    end
+
+    PDFChunk --> EmbedStore[Embedding & Storage]
+    DOCXChunk --> EmbedStore
+    VisionPipe --> EmbedStore
+    XLChunk --> EmbedStore
+    IMGChunk --> EmbedStore
+    VIDChunk --> EmbedStore
+```
+
+---
+
+## 1. PDF Processing
+
+PDFs are the most common document format in research. They range from cleanly formatted digital documents to scanned images of handwritten notes. A production pipeline must handle all variants.
+
+### 1.1 Text Extraction
+
+**Digital PDFs** contain embedded text layers. Use **PyMuPDF (fitz)** for fast, accurate text extraction:
+
+```python
+import fitz  # PyMuPDF
+
+def extract_text(pdf_path: str) -> list[dict]:
+    doc = fitz.open(pdf_path)
+    pages = []
+    for page_num, page in enumerate(doc):
+        text = page.get_text("text")
+        pages.append({
+            "page_number": page_num + 1,
+            "text": text,
+            "word_count": len(text.split())
+        })
+    return pages
+```
+
+**Scanned PDFs** lack embedded text. They require OCR before text extraction.
+
+### 1.2 OCR (Optical Character Recognition)
+
+| OCR Engine | Accuracy (printed) | Multi-Language | Speed | Cost |
+|:---|:---|:---|:---|:---|
+| **Tesseract 5** | ~92-95% | 100+ languages | ~1s/page | Free |
+| **PaddleOCR** | ~95-97% | 80+ languages | ~0.5s/page | Free |
+| **EasyOCR** | ~90-93% | 80+ languages | ~2s/page | Free |
+| **Azure Document Intelligence** | ~97-99% | 300+ languages | ~1s/page | \$1.50/1000 pages |
+| **Google Document AI** | ~97-99% | 200+ languages | ~1s/page | \$1.50/1000 pages |
+
+**Recommendation**: Use **PaddleOCR** as the default (best free accuracy). Fall back to **Azure Document Intelligence** for critical documents where accuracy is paramount.
+
+### 1.3 Layout Extraction
+
+Academic papers have complex layouts: multi-column text, headers, footers, sidebars, figures, and figure captions. Layout extraction identifies the reading order and semantic structure.
+
+**Tools**:
+- **LayoutLMv3** (Microsoft): A pre-trained model that detects document regions (title, abstract, body, table, figure, footer). Very accurate for academic papers.
+- **Unstructured.io**: Open-source library that combines multiple parsers for layout detection. Good general-purpose option.
+- **Docling** (IBM): Converts PDFs to structured Markdown/JSON with layout-aware chunking.
+
+**Why layout matters**: Without layout analysis, a two-column PDF might interleave text from both columns, producing garbled output. Layout analysis preserves reading order and separates content from boilerplate.
+
+### 1.4 Table Extraction
+
+Tables in PDFs are notoriously difficult to extract because PDFs store content as positioned characters, not as structured table data.
+
+| Tool | Method | Accuracy | Handles Complex Tables |
+|:---|:---|:---|:---|
+| **pdfplumber** | Rule-based line detection | Good for clean tables | No (fails on borderless tables) |
+| **Camelot** | Lattice + Stream detection | Good | Moderate |
+| **Tabula** | Java-based rule extraction | Good | Moderate |
+| **Azure Document Intelligence** | ML-based detection | Excellent | Yes |
+| **LLM extraction** | Send table image to GPT-4o | Excellent | Yes |
+
+**Recommendation**: Use **pdfplumber** as the primary extractor (free, fast). For borderless or complex tables, fall back to sending a screenshot of the table region to a multimodal LLM.
+
+### 1.5 Citation Extraction
+
+For academic papers, extracting structured citation data (author, title, journal, year, DOI) is essential for building citation networks.
+
+- **GROBID**: The industry standard for academic paper parsing. Extracts title, authors, abstract, body sections, references, and citations. Outputs structured TEI XML. Free, self-hosted.
+- **Science Parse** (Allen AI): Extracts metadata and references. Simpler than GROBID but less comprehensive.
+
+### 1.6 Semantic Chunking
+
+Naive chunking (splitting every N tokens) breaks sentences and loses context. Semantic chunking preserves logical boundaries.
+
+**Strategies**:
+1. **Section-based**: Split by document headings (H1, H2, H3). Each section becomes a chunk.
+2. **Paragraph-based**: Split by paragraph boundaries, merging short paragraphs together.
+3. **Semantic splitting**: Use embedding similarity to detect topic boundaries. When consecutive paragraphs have cosine similarity < 0.7, insert a split point.
+
+**Recommended**: Section-based chunking for structured documents (academic papers, reports). Semantic splitting for unstructured documents (web pages, transcripts).
+
+**Chunk size**: 512-1024 tokens with 128-token overlap. This balances retrieval precision (smaller chunks = more precise matches) with context preservation (larger chunks = more context for the LLM).
+
+### 1.7 Metadata Extraction
+
+Every document produces a metadata record:
+
+```python
+class DocumentMetadata(BaseModel):
+    doc_id: str
+    title: Optional[str]
+    authors: List[str]
+    publication_date: Optional[datetime]
+    source_url: Optional[str]
+    doi: Optional[str]
+    page_count: int
+    word_count: int
+    language: str
+    document_type: str  # "academic_paper", "report", "manual"
+```
+
+### Real-World Example: Processing an Academic Paper
+
+Consider processing the paper: *"Attention Is All You Need" (Vaswani et al., 2017)*
+
+1. **PyMuPDF** extracts text from all 15 pages.
+2. **LayoutLMv3** identifies: title block, author list, abstract, 6 body sections, figures (8), tables (5), references section.
+3. **pdfplumber** extracts Tables 1-5 into pandas DataFrames.
+4. **GROBID** parses 76 references into structured citation records.
+5. **Section-based chunker** produces 14 chunks (one per section, with large sections split at ~800 tokens).
+6. **Embedding generator** creates 384-dim vectors for each chunk using `all-MiniLM-L6-v2`.
+7. Total processing time: ~3 seconds.
+
+---
+
+## 2. Word Document Processing
+
+Word documents (`.docx`) use the Office Open XML format, which is a ZIP archive containing structured XML files.
+
+### Processing Pipeline
+
+1. **Parse with python-docx**: Extract paragraphs, headings, tables, and images.
+2. **Heading Hierarchy Detection**: Map heading levels (Heading 1, Heading 2, etc.) to a tree structure representing the document outline.
+3. **Table Extraction**: `python-docx` natively supports table reading. Each table is converted to a pandas DataFrame.
+4. **Embedded Image Extraction**: Extract images from the `media/` directory inside the DOCX ZIP archive. Process each image through the Vision Pipeline.
+5. **Style Analysis**: Detect bold, italic, and highlighted text to identify key terms and emphasis.
+
+```python
+from docx import Document
+
+def process_docx(file_path: str) -> dict:
+    doc = Document(file_path)
+    sections = []
+    current_section = {"heading": "Introduction", "level": 0, "content": []}
+    
+    for paragraph in doc.paragraphs:
+        if paragraph.style.name.startswith("Heading"):
+            level = int(paragraph.style.name.split()[-1])
+            sections.append(current_section)
+            current_section = {
+                "heading": paragraph.text,
+                "level": level,
+                "content": []
+            }
+        else:
+            current_section["content"].append(paragraph.text)
+    
+    sections.append(current_section)
+    return {"sections": sections, "tables": extract_tables(doc)}
+```
+
+**Limitation**: Older `.doc` format requires `antiword` or LibreOffice conversion to `.docx` first.
+
+---
+
+## 3. Excel & CSV Processing
+
+Spreadsheets contain structured data that is often more valuable than unstructured text. The challenge is understanding what the data represents.
+
+### Processing Pipeline
+
+1. **Sheet Classification**: For multi-sheet workbooks, classify each sheet as: `data_table`, `summary`, `metadata`, `chart_data`, `notes`. Use heuristics (row/column counts, presence of headers) and LLM classification.
+2. **Header Detection**: Identify header rows by analyzing formatting (bold, merged cells) and content patterns (text in row 1, numbers in rows 2+).
+3. **Data Range Detection**: Find the bounding rectangle of meaningful data, excluding empty rows/columns.
+4. **Statistical Analysis**: Auto-compute summary statistics (mean, median, std, min, max) for numerical columns. Detect outliers using IQR method.
+5. **Pattern Detection**: Identify time-series data, categorical distributions, and correlations between columns.
+6. **Natural Language Summary**: Use an LLM to generate a human-readable description of the dataset.
+
+```python
+import pandas as pd
+
+def analyze_spreadsheet(file_path: str) -> dict:
+    if file_path.endswith('.csv'):
+        df = pd.read_csv(file_path)
+    else:
+        df = pd.read_excel(file_path)
+    
+    analysis = {
+        "shape": df.shape,
+        "columns": list(df.columns),
+        "dtypes": df.dtypes.to_dict(),
+        "numeric_summary": df.describe().to_dict(),
+        "null_counts": df.isnull().sum().to_dict(),
+        "sample_rows": df.head(5).to_dict()
+    }
+    return analysis
+```
+
+**Cost consideration**: Large Excel files (100K+ rows) can consume significant memory. Process in chunks using `openpyxl` read-only mode or `pandas` `chunksize` parameter.
+
+---
+
+## 4. PowerPoint Processing
+
+Presentations contain a mix of text, images, charts, and speaker notes that together tell a narrative.
+
+### Processing Pipeline
+
+1. **Slide Content Extraction**: Use `python-pptx` to extract text from each slide (title, body, text boxes).
+2. **Speaker Notes Extraction**: Extract notes attached to each slide — these often contain the most detailed explanations.
+3. **Embedded Image/Chart Extraction**: Extract images and chart objects from slides. Process through the Vision Pipeline.
+4. **Layout Analysis**: Identify slide type (title slide, content slide, section header, comparison layout) to understand information hierarchy.
+5. **Narrative Reconstruction**: Combine slide content + speaker notes into a sequential narrative document.
+
+```python
+from pptx import Presentation
+
+def process_pptx(file_path: str) -> list[dict]:
+    prs = Presentation(file_path)
+    slides = []
+    for slide_num, slide in enumerate(prs.slides, 1):
+        text_parts = []
+        for shape in slide.shapes:
+            if shape.has_text_frame:
+                text_parts.append(shape.text_frame.text)
+        
+        notes = ""
+        if slide.has_notes_slide:
+            notes = slide.notes_slide.notes_text_frame.text
+        
+        slides.append({
+            "slide_number": slide_num,
+            "content": "\n".join(text_parts),
+            "speaker_notes": notes
+        })
+    return slides
+```
+
+---
+
+## 5. Image Understanding
+
+Images require multimodal processing to extract both textual and visual information.
+
+### Processing Stages
+
+1. **Classification**: Determine image type (photograph, screenshot, chart, diagram, infographic, text document scan).
+2. **OCR**: Extract any embedded text using PaddleOCR or Tesseract.
+3. **Visual Analysis**: Send to multimodal LLM (Gemini 2.0 Flash) with a structured extraction prompt.
+4. **Chart Data Extraction**: For charts/graphs, use DePlot or a multimodal LLM to extract the underlying data table.
+
+### Chart Extraction Example
+
+Given a bar chart image showing "Quarterly Revenue by Region":
+
+```
+Prompt: "Extract the data from this chart. Return a JSON table with columns 
+for each category and rows for each data point. Include axis labels and units."
+
+LLM Response:
+{
+  "chart_type": "bar_chart",
+  "title": "Quarterly Revenue by Region",
+  "x_axis": "Quarter",
+  "y_axis": "Revenue (USD Millions)",
+  "data": [
+    {"quarter": "Q1 2025", "APAC": 45.2, "EMEA": 38.1, "Americas": 72.3},
+    {"quarter": "Q2 2025", "APAC": 48.7, "EMEA": 41.5, "Americas": 75.8}
+  ]
+}
+```
+
+### Technology Comparison
+
+| Tool | Capability | Best For | Cost |
+|:---|:---|:---|:---|
+| **GPT-4o** | General vision understanding | Complex diagrams, infographics | \$5/1M input tokens |
+| **Gemini 2.0 Flash** | General vision understanding | High-volume image analysis | \$0.10/1M input tokens |
+| **Claude 3.5 Sonnet** | General vision understanding | Detailed chart interpretation | \$3/1M input tokens |
+| **DePlot** | Chart-to-table conversion | Batch chart extraction | Free (self-hosted) |
+| **PaddleOCR** | Text extraction from images | Screenshots, documents | Free |
+| **YOLO v8** | Object detection | Identifying visual elements | Free |
+
+---
+
+## 6. Video Processing
+
+Video is the most resource-intensive media type to process. A 1-hour lecture video may contain 60 minutes of audio (transcript), 100+ unique slides, and numerous visual elements.
+
+### Processing Pipeline
+
+1. **Download/Ingest**: Use `yt-dlp` for YouTube/Vimeo URLs. Accept direct MP4/MKV uploads.
+2. **Audio Extraction**: Use FFmpeg to extract the audio track as WAV/MP3.
+3. **Transcription**: Run audio through OpenAI Whisper (large-v3) with word-level timestamps.
+4. **Keyframe Extraction**: Sample frames at regular intervals (every 10 seconds) or use scene change detection (OpenCV `cv2.VideoCapture` with frame differencing).
+5. **Slide Detection**: For presentation videos, detect unique slides by comparing consecutive frames. When pixel difference exceeds threshold, a new slide is detected.
+6. **Visual Content Extraction**: Send detected slides to multimodal LLM for text and diagram extraction.
+7. **Time-Aligned Assembly**: Merge transcript segments with their corresponding visual content, aligned by timestamp.
+
+### Output Format
+
+```json
+{
+  "video_id": "abc123",
+  "duration_seconds": 3600,
+  "segments": [
+    {
+      "start_time": "00:00:00",
+      "end_time": "00:02:30",
+      "transcript": "Today we will discuss the architecture of transformer models...",
+      "slide_content": "Title: Transformer Architecture Overview",
+      "speaker": "Speaker 1"
+    }
+  ]
+}
+```
+
+**Cost**: Processing a 1-hour video costs approximately \$0.50-2.00 (Whisper GPU compute + multimodal LLM calls for slide analysis).
+
+---
+
+## 7. Audio Processing
+
+Audio sources (podcasts, earnings calls, interviews) follow a simpler pipeline than video since there is no visual component.
+
+### Processing Pipeline
+
+1. **Format Conversion**: Convert all input formats to WAV 16kHz mono using FFmpeg.
+2. **Transcription**: Run through Whisper with timestamps enabled.
+3. **Speaker Diarization**: Use `pyannote.audio` to identify and label distinct speakers.
+4. **Topic Segmentation**: Use an LLM to split the transcript into topic-based segments (e.g., "Introduction", "Technical Discussion", "Q&A").
+5. **Entity Extraction**: Extract mentioned people, organizations, products, and technical terms.
+
+### Speaker Diarization Example
+
+```
+Input: 45-minute podcast with 2 speakers
+
+Output:
+[00:00 - 02:15] Speaker A: "Welcome to the AI engineering podcast..."
+[02:15 - 05:30] Speaker B: "Thanks for having me. Today I want to discuss..."
+[05:30 - 05:45] Speaker A: "That's fascinating. Can you elaborate on..."
+```
+
+**Quality Note**: Whisper large-v3 achieves a Word Error Rate (WER) of ~3-5% on clean English audio. For noisy audio or heavy accents, WER may increase to 8-15%. For mission-critical transcription (legal, medical), use a human-in-the-loop review.
+
+---
+
+# Part G: Source Evaluation & Quality Ranking
+
+Not all sources are equal. A blog post from an anonymous author and a peer-reviewed paper in Nature carry fundamentally different weights. This section details how a Deep Research system evaluates, scores, and ranks information sources to ensure the final report is built on trustworthy evidence.
+
+## Source Ranking Flow Diagram
+
+```mermaid
+graph TD
+    RawSources[Raw Source Documents] --> AuthScore[Authority Scoring]
+    RawSources --> DomainRep[Domain Reputation Check]
+    RawSources --> FreshScore[Freshness Scoring]
+    RawSources --> CitationCheck[Citation Count Analysis]
+    RawSources --> RelevanceScore[Relevance Scoring]
+    RawSources --> EvidDensity[Evidence Density Analysis]
+
+    AuthScore --> Composite[Composite Quality Score Calculator]
+    DomainRep --> Composite
+    FreshScore --> Composite
+    CitationCheck --> Composite
+    RelevanceScore --> Composite
+    EvidDensity --> Composite
+
+    Composite --> ThresholdFilter{Score >= Threshold?}
+    ThresholdFilter -- Yes --> DiversityCheck[Diversity Enforcement]
+    ThresholdFilter -- No --> Discard[Discard Source]
+
+    DiversityCheck --> DedupCheck[Deduplication Check]
+    DedupCheck --> FinalRanking[Final Ranked Source List]
+```
+
+---
+
+## 1. Source Quality Dimensions
+
+### 1.1 Authority Scoring
+
+Authority scoring measures the credibility of a source based on the author's expertise and the publishing institution's reputation.
+
+**Scoring Factors**:
+
+| Factor | Weight | Scoring Logic |
+|:---|:---|:---|
+| Domain suffix | 15% | `.gov` = 1.0, `.edu` = 0.95, `.org` = 0.8, `.com` = 0.5 |
+| Publication type | 25% | Peer-reviewed journal = 1.0, Conference paper = 0.9, Whitepaper = 0.7, News article = 0.6, Blog = 0.3 |
+| Author credentials | 20% | Known researcher = 1.0, Institutional affiliation = 0.8, Anonymous = 0.2 |
+| Institutional affiliation | 20% | Top-100 university = 1.0, Government agency = 0.95, Major corporation = 0.8, Unknown = 0.3 |
+| Editorial review process | 20% | Peer-reviewed = 1.0, Editorially reviewed = 0.7, Self-published = 0.3 |
+
+**Implementation**: Maintain a lookup table of known authoritative domains (e.g., `nature.com`, `science.org`, `arxiv.org`, `nih.gov`). For unknown domains, use a heuristic model trained on domain features (TLD, Alexa rank, backlink profile).
+
+**Why this matters**: A research report citing anonymous blog posts will be perceived as unreliable, even if the information happens to be correct. Authority scoring ensures the system preferentially uses the most credible available sources.
+
+### 1.2 Domain Reputation
+
+Domain reputation extends authority scoring to track historical reliability of entire websites.
+
+**How it works**:
+1. Maintain a domain reputation database (seeded from known authoritative lists + Majestic/Ahrefs data).
+2. For each domain, track: total pages crawled, factual accuracy rate (from verification pipeline feedback), content freshness, citation frequency.
+3. Update reputation scores using exponential moving averages to reflect recent quality trends.
+
+**PageRank-like scoring**: Build a citation graph where nodes are domains and edges represent citations between them. Run PageRank to identify domains that are frequently cited by other authoritative sources.
+
+### 1.3 Freshness Scoring
+
+Information decays in value over time, but the rate of decay depends on the topic.
+
+**Time-Decay Function**:
+
+$$\text{Freshness Score} = e^{-\lambda \cdot \Delta t}$$
+
+Where $\Delta t$ is the age of the document in days, and $\lambda$ is a topic-dependent decay constant:
+
+| Topic Type | Decay Constant ($\lambda$) | Half-Life |
+|:---|:---|:---|
+| Breaking news | 0.1 | ~7 days |
+| Technology trends | 0.005 | ~140 days |
+| Scientific research | 0.001 | ~2 years |
+| Historical analysis | 0.0001 | ~19 years |
+| Mathematical proofs | ~0 | Essentially infinite |
+
+**Implementation**: Classify the research topic type during the planning phase. Apply the corresponding decay function when scoring sources.
+
+### 1.4 Citation Count
+
+Citation count measures how many other works reference a given source. Higher citation counts generally indicate greater influence and reliability.
+
+**Data Sources**:
+- Semantic Scholar API: Provides citation counts for academic papers.
+- OpenAlex: Provides citation data across 250M+ works.
+- Google Scholar: Broadest citation data but requires scraping (risky).
+
+**Forward vs. Backward Analysis**:
+- **Forward citations** (who cites this paper?): Measures influence. Papers with 100+ citations are generally considered highly impactful.
+- **Backward citations** (what does this paper cite?): Verifies that the source itself builds on established work.
+- **Co-citation analysis**: If two papers are frequently cited together, they likely address related aspects of the same topic.
+
+**Limitation**: Citation counts are biased toward older papers. A groundbreaking paper published last month will have zero citations. Freshness scoring compensates for this.
+
+### 1.5 Relevance Scoring
+
+Relevance measures how closely a source's content aligns with the research objectives.
+
+**Methods**:
+
+| Method | Description | Speed | Accuracy |
+|:---|:---|:---|:---|
+| **BM25** | Term-frequency scoring | Very fast | Good for keyword matches |
+| **TF-IDF** | Term importance weighting | Very fast | Good for keyword matches |
+| **Dense retrieval** | Cosine similarity of embeddings | Fast | Best for semantic matches |
+| **Cross-encoder** | Pair-wise relevance classification | Slow | Highest accuracy |
+
+**Recommended approach**: Use dense retrieval (embedding cosine similarity) as the primary relevance scorer. Apply cross-encoder reranking on the top 20-50 candidates for highest precision.
+
+### 1.6 Evidence Density
+
+Evidence density measures the ratio of verifiable facts to total text. A source that contains specific numbers, dates, citations, and data points is more valuable than one that contains vague generalizations.
+
+**How to measure**:
+1. Count named entities (organizations, dates, monetary values, percentages) using NER.
+2. Count inline citations and references.
+3. Count data tables and figures.
+4. Divide by total word count to normalize.
+
+$$\text{Evidence Density} = \frac{\text{entities} + \text{citations} + \text{tables} + \text{figures}}{\text{word\_count} / 100}$$
+
+A score > 5.0 indicates a highly evidence-rich source.
+
+### 1.7 Composite Source Confidence Score
+
+All dimensions are combined into a single composite score using a weighted formula:
+
+$$\text{SCS} = w_1 \cdot \text{Authority} + w_2 \cdot \text{Domain Rep.} + w_3 \cdot \text{Freshness} + w_4 \cdot \text{Citations} + w_5 \cdot \text{Relevance} + w_6 \cdot \text{Evidence Density}$$
+
+Default weights: $w_1 = 0.20$, $w_2 = 0.15$, $w_3 = 0.15$, $w_4 = 0.10$, $w_5 = 0.25$, $w_6 = 0.15$.
+
+These weights are tunable per research domain. For medical research, authority weight increases; for breaking news analysis, freshness weight increases.
+
+---
+
+## 2. Ranking & Filtering Algorithms
+
+### 2.1 Multi-Factor Weighted Scoring
+
+Each source receives a composite score and is sorted in descending order. This is the simplest and most interpretable ranking method.
+
+### 2.2 Learning-to-Rank (LTR)
+
+For production systems serving millions of users, train a learning-to-rank model on human-annotated source quality judgments:
+
+1. Collect training data: Present pairs of sources to human raters and ask "Which is more relevant and trustworthy?"
+2. Train a gradient-boosted model (LightGBM, XGBoost) using source features as inputs.
+3. Deploy the model as a scoring function in the ranking pipeline.
+
+**Trade-off**: LTR requires significant annotation effort (thousands of labeled examples) but produces more nuanced rankings than hand-tuned weights.
+
+### 2.3 Threshold-Based Filtering
+
+Sources with composite scores below a configurable threshold are discarded entirely:
+
+- **Hard threshold**: Discard all sources with SCS < 0.3.
+- **Dynamic threshold**: Set threshold based on the best available source. If the top source scores 0.9, discard anything below 0.5. If the top source scores 0.5, lower the threshold to 0.2.
+
+### 2.4 Diversity Enforcement
+
+Prevent echo chambers by ensuring the selected sources represent diverse perspectives:
+
+- **Domain diversity**: No more than 3 sources from the same domain.
+- **Temporal diversity**: Include sources from at least 2 distinct time periods.
+- **Perspective diversity**: For opinion-sensitive topics, include sources representing different viewpoints.
+
+### 2.5 Source Deduplication
+
+Syndicated content (press releases, wire stories) appears on multiple websites with identical or near-identical text. Detect duplicates using MinHash / SimHash algorithms on content fingerprints. Retain only the original source (earliest publication date or highest authority domain).
+
+---
+
+# Part H: Retrieval & Knowledge Management
+
+Retrieval is the bridge between collected evidence and report generation. This section details how a Deep Research system finds the right information from potentially millions of stored chunks.
+
+## Retrieval Architecture Diagram
+
+```mermaid
+graph TD
+    Query[Research Query / Sub-Question] --> QueryProc[Query Processing]
+    
+    subgraph Pre-Retrieval
+        QueryProc --> QueryExpand[Query Expansion]
+        QueryExpand --> HyDE["HyDE: Hypothetical Doc Generation"]
+        QueryExpand --> MultiQuery[Multi-Query Generation]
+        QueryExpand --> StepBack[Step-Back Prompting]
+    end
+
+    subgraph Hybrid Retrieval
+        HyDE --> DenseRetrieval[Dense Retrieval - Embeddings]
+        MultiQuery --> DenseRetrieval
+        StepBack --> SparseRetrieval[Sparse Retrieval - BM25]
+        
+        DenseRetrieval --> RRF[Reciprocal Rank Fusion]
+        SparseRetrieval --> RRF
+    end
+
+    subgraph Knowledge Sources
+        RRF --> VDB[(Vector Database)]
+        RRF --> KG[(Knowledge Graph)]
+        RRF --> UserDocs[(User-Uploaded Index)]
+    end
+
+    subgraph Post-Retrieval
+        VDB --> Reranker[Cross-Encoder Reranker]
+        KG --> Reranker
+        UserDocs --> Reranker
+        Reranker --> Compressor[Contextual Compression]
+        Compressor --> TopK[Top-K Selected Chunks]
+    end
+
+    TopK --> LLM[LLM Synthesis Engine]
+```
+
+---
+
+## 1. RAG Architecture for Deep Research
+
+### Standard RAG
+
+Standard Retrieval-Augmented Generation follows a simple pipeline:
+1. Embed the user query.
+2. Search a vector database for the most similar document chunks.
+3. Concatenate the top-K chunks into the LLM context.
+4. Generate a response grounded in the retrieved context.
+
+**Problem for Deep Research**: Standard RAG retrieves a fixed set of chunks based on a single query. Deep Research requires iterative retrieval across multiple sub-questions, with dynamic expansion based on discovered information.
+
+### Advanced RAG for Deep Research
+
+Deep Research systems extend RAG with three optimization layers:
+
+**Pre-Retrieval Optimizations**:
+- Query rewriting: Rephrase the query for better retrieval alignment.
+- Query decomposition: Break complex queries into atomic sub-queries.
+- HyDE: Generate a hypothetical answer, embed it, and search for similar real documents.
+
+**Retrieval Optimizations**:
+- Hybrid search: Combine sparse (BM25) and dense (embedding) retrieval.
+- Multi-index search: Query across web evidence, user documents, and knowledge graphs simultaneously.
+- Recursive retrieval: Use initial results to generate follow-up queries.
+
+**Post-Retrieval Optimizations**:
+- Reranking: Use a cross-encoder to re-score and reorder retrieved chunks.
+- Contextual compression: Remove irrelevant sentences from retrieved chunks.
+- Diversity filtering: Ensure retrieved chunks cover different aspects of the query.
+
+### Modular RAG
+
+Modern systems use a modular RAG architecture where each component (retriever, reranker, compressor, generator) is independently swappable. This allows A/B testing different retrieval strategies without changing the rest of the pipeline.
+
+---
+
+## 2. Hybrid Retrieval
+
+### Why Hybrid?
+
+| Retrieval Type | Strengths | Weaknesses |
+|:---|:---|:---|
+| **Sparse (BM25)** | Exact keyword matching, handles rare terms well, fast | Misses semantic similarity, ignores synonyms |
+| **Dense (Embeddings)** | Captures semantic meaning, finds conceptually similar text | Can miss exact matches, computationally heavier |
+| **Hybrid (BM25 + Dense)** | Best of both worlds: exact + semantic | More complex, slightly higher latency |
+
+### Reciprocal Rank Fusion (RRF)
+
+RRF is the standard method for combining results from multiple retrieval systems:
+
+$$\text{RRF}(d) = \sum_{r \in R} \frac{1}{k + r(d)}$$
+
+Where $r(d)$ is the rank of document $d$ in retrieval system $r$, and $k$ is a constant (typically 60).
+
+**Why RRF works**: It gives high scores to documents that appear near the top of multiple ranking lists, naturally combining the strengths of each retrieval method.
+
+---
+
+## 3. Vector Database Selection
+
+| Database | Hosting | Indexing | Max Scale | Filtering | Cost |
+|:---|:---|:---|:---|:---|:---|
+| **Qdrant** | Self-hosted / Cloud | HNSW | Billions | Rich metadata filters | Free (self-hosted), \$0.05/M vectors (cloud) |
+| **Pinecone** | Fully managed | Proprietary | Billions | Metadata filters | \$0.096/hr per pod |
+| **Weaviate** | Self-hosted / Cloud | HNSW | 100M+ | GraphQL filters | Free (self-hosted) |
+| **Milvus** | Self-hosted | IVF, HNSW, PQ | Billions | Attribute filters | Free |
+| **ChromaDB** | Embedded | HNSW | Millions | Basic filters | Free |
+| **pgvector** | PostgreSQL extension | IVF, HNSW | Millions | Full SQL | Free |
+
+**Recommendation**: Use **Qdrant** for production (best balance of performance, filtering, and cost). Use **ChromaDB** for prototyping and development. Use **pgvector** if you want to avoid adding a new database to your stack.
+
+### Embedding Model Selection
+
+| Model | Dimensions | Quality (MTEB) | Speed | Cost |
+|:---|:---|:---|:---|:---|
+| **text-embedding-3-large** | 3072 | 64.6 | Medium | \$0.13/1M tokens |
+| **text-embedding-3-small** | 1536 | 62.3 | Fast | \$0.02/1M tokens |
+| **Cohere Embed v3** | 1024 | 64.5 | Fast | \$0.10/1M tokens |
+| **BGE-large-en-v1.5** | 1024 | 63.0 | Fast | Free (self-hosted) |
+| **Jina Embeddings v3** | 1024 | 65.5 | Medium | \$0.02/1M tokens |
+| **all-MiniLM-L6-v2** | 384 | 56.3 | Very Fast | Free (self-hosted) |
+
+**Recommendation**: Use **Jina Embeddings v3** or **Cohere Embed v3** for best quality-cost balance. Use **all-MiniLM-L6-v2** for latency-critical or budget-constrained scenarios.
+
+**Dimensionality trade-off**: Higher dimensions capture more semantic nuance but increase storage costs and search latency. For research applications where accuracy matters most, use 1024+ dimensions. For high-volume, cost-sensitive deployments, 384 dimensions often suffice.
+
+---
+
+## 4. Knowledge Graphs
+
+Vector databases excel at finding semantically similar text, but they struggle with structured relationships (e.g., "Company X acquired Company Y in 2024"). Knowledge graphs complement vector search by storing entity-relationship triples.
+
+### How Knowledge Graphs Support Deep Research
+
+1. **Entity Resolution**: Link mentions of the same entity across different sources (e.g., "Google", "Alphabet Inc.", "GOOG" all refer to the same company).
+2. **Relationship Discovery**: Find indirect connections (e.g., "Researcher A co-authored with Researcher B, who works at Lab C that is funded by Agency D").
+3. **Temporal Reasoning**: Track how facts change over time (e.g., CEO of company X was Person A in 2020, Person B in 2023).
+4. **Fact Verification**: Cross-reference claims against structured knowledge.
+
+### Implementation
+
+- **Graph Database**: Neo4j (most mature, Cypher query language) or Amazon Neptune (managed service).
+- **Entity Extraction**: Use an LLM to extract (subject, predicate, object) triples from evidence chunks.
+- **Graph Construction**: Insert triples into the graph database with provenance metadata (source URL, extraction confidence).
+
+```
+// Cypher query example: Find all companies researching solid-state batteries
+MATCH (c:Company)-[:RESEARCHES]->(t:Technology {name: "solid-state battery"})
+RETURN c.name, c.headquarters, c.founding_year
+```
+
+**Trade-off**: Knowledge graphs add significant system complexity (another database to maintain, entity extraction pipeline, graph query optimization). They are most valuable for research tasks involving complex multi-entity relationships. For simpler factual research, vector search alone is sufficient.
+
+---
+
+## 5. Query Expansion & Reranking
+
+### Query Expansion Techniques
+
+**Hypothetical Document Embeddings (HyDE)**:
+1. Given a query, use an LLM to generate a hypothetical answer document.
+2. Embed the hypothetical document instead of the raw query.
+3. Search the vector database using this embedding.
+
+**Why HyDE works**: The hypothetical answer is stylistically similar to the actual documents in the database, producing better embedding alignment than a short query.
+
+**Multi-Query Generation**:
+1. Use an LLM to generate 3-5 alternative phrasings of the query.
+2. Run retrieval for each variant.
+3. Merge results using RRF.
+
+**Step-Back Prompting**:
+1. Generate a higher-level, more abstract version of the query.
+2. Retrieve context for both the original and abstracted queries.
+3. This helps find foundational information that directly answers the original question.
+
+### Reranking Systems
+
+After initial retrieval returns 50-100 candidates, a reranker re-scores them for precise relevance.
+
+| Reranker | Type | Accuracy | Speed | Cost |
+|:---|:---|:---|:---|:---|
+| **Cohere Rerank v3** | Cross-encoder API | Excellent | ~100ms/batch | \$2/1000 queries |
+| **BGE Reranker v2** | Cross-encoder (self-hosted) | Very Good | ~200ms/batch | Free |
+| **ColBERT v2** | Late interaction | Very Good | Fast | Free |
+| **Jina Reranker** | Cross-encoder API | Very Good | ~150ms/batch | \$0.02/1000 queries |
+| **LLM-as-a-judge** | LLM scoring | Excellent | Slow (~2s/batch) | \$0.01-0.05/batch |
+
+**Recommendation**: Use **Cohere Rerank v3** for production (best accuracy-latency balance). Use **BGE Reranker v2** for self-hosted deployments. Use **LLM-as-a-judge** only when accuracy is critical and latency is acceptable (e.g., final report verification).
+
+---
+
+## 6. User-Uploaded Document Support
+
+Deep Research systems must support research across both web-discovered evidence and user-uploaded documents.
+
+### Architecture
+
+1. **Namespace Isolation**: Each user's uploaded documents are stored in a separate namespace within the vector database. This prevents cross-contamination between users.
+2. **Dual-Index Search**: When a user uploads documents, retrieval queries search both the web evidence index and the user's personal document index. Results are merged using RRF.
+3. **Per-Session vs. Persistent Indexes**: Short research sessions use ephemeral indexes (deleted after session). Users who want to build a personal knowledge base use persistent indexes.
+
+### Implementation with Qdrant
+
+```python
+# Create a user-specific collection
+qdrant_client.create_collection(
+    collection_name=f"user_{user_id}_docs",
+    vectors_config=VectorParams(size=1024, distance=Distance.COSINE)
+)
+
+# Search across both collections
+web_results = qdrant_client.search("web_evidence", query_vector, limit=20)
+user_results = qdrant_client.search(f"user_{user_id}_docs", query_vector, limit=10)
+
+# Merge with RRF
+final_results = reciprocal_rank_fusion([web_results, user_results], k=60)
+```
+
+---
+
+# Part I: Verification & Fact Checking
+
+The verification pipeline is the final quality gate before information enters the research report. Without robust verification, a Deep Research system would produce confidently written but potentially inaccurate reports — the worst possible outcome.
+
+## Verification Pipeline Diagram
+
+```mermaid
+graph TD
+    SynthReport[Synthesized Report Draft] --> ClaimDecomp[Claim Decomposition]
+    
+    subgraph Atomic Verification
+        ClaimDecomp --> AtomicClaims[Atomic Claim Extraction]
+        AtomicClaims --> EvidRetrieval[Evidence Retrieval per Claim]
+        EvidRetrieval --> NLICheck[NLI Entailment Check]
+        EvidRetrieval --> ProgCheck[Programmatic Verification]
+    end
+
+    subgraph Cross-Source Validation
+        NLICheck --> CrossRef[Cross-Source Matching]
+        ProgCheck --> CrossRef
+        CrossRef --> ContraDetect[Contradiction Detection]
+    end
+
+    subgraph Confidence Assessment
+        ContraDetect --> ConfScore[Per-Claim Confidence Score]
+        ConfScore --> SectionConf[Section-Level Aggregation]
+        SectionConf --> ReportConf[Report-Level Confidence]
+    end
+
+    subgraph Quality Gate
+        ReportConf --> QualityCheck{Confidence >= Threshold?}
+        QualityCheck -- Yes --> Approved[Approved for Report]
+        QualityCheck -- No --> Revision[Flag for Revision / Additional Research]
+        Revision --> EvidRetrieval
+    end
+
+    Approved --> FinalReport[Final Verified Report]
+```
+
+---
+
+## 1. Cross-Source Validation
+
+Cross-source validation is the principle that a fact is more trustworthy when multiple independent sources confirm it.
+
+### Validation Rules
+
+| Claim Type | Minimum Independent Sources | Example |
+|:---|:---|:---|
+| Statistical data point | 2 | "Global EV sales reached 14M in 2024" |
+| Historical fact | 1 (authoritative source) | "The transistor was invented in 1947" |
+| Scientific consensus | 3+ (peer-reviewed) | "mRNA vaccines are effective against COVID-19" |
+| Market projection | 2+ (independent analysts) | "AI market will reach \$500B by 2030" |
+| Expert opinion | 1 (attributed) | "Dr. Smith believes X will happen" |
+| Controversial claim | 3+ (diverse perspectives) | "AI will replace most programming jobs" |
+
+### How Cross-Validation Works
+
+1. **Claim Extraction**: The verification agent extracts all factual claims from the synthesized report.
+2. **Source Mapping**: For each claim, identify all sources in the evidence store that contain information about this topic.
+3. **Agreement Check**: Count how many independent sources (different domains) support the claim.
+4. **Conflict Resolution**: If sources disagree, present both perspectives with attribution.
+
+### Handling Conflicting Authoritative Sources
+
+When equally authoritative sources contradict each other (e.g., McKinsey says market size is \$200B while Gartner says \$350B):
+
+1. **Present both**: "Estimates vary: McKinsey projects \$200B [1] while Gartner projects \$350B [2]."
+2. **Explain the difference**: If possible, identify why the estimates differ (different methodology, different market definition, different time period).
+3. **Do NOT pick a side**: The system should not arbitrarily choose one estimate over the other unless there is a clear methodological reason.
+
+---
+
+## 2. Claim Verification
+
+### Claim Decomposition
+
+Complex statements must be broken down into atomic, independently verifiable claims:
+
+**Original**: "Tesla's solid-state battery partnership with QuantumScape, announced in March 2025, aims to achieve 500 Wh/kg energy density by 2027, which would be 40% higher than current lithium-ion cells."
+
+**Decomposed**:
+1. Tesla has a partnership with QuantumScape. *(Verifiable: company announcement)*
+2. The partnership was announced in March 2025. *(Verifiable: news archives)*
+3. The target energy density is 500 Wh/kg. *(Verifiable: technical specification)*
+4. The target date is 2027. *(Verifiable: announcement)*
+5. Current lithium-ion cells have ~357 Wh/kg energy density. *(Verifiable: 500/1.4 ≈ 357)*
+6. 500 Wh/kg is 40% higher than current lithium-ion cells. *(Verifiable: mathematical check)*
+
+### NLI (Natural Language Inference)
+
+NLI evaluates whether a source passage **entails**, **contradicts**, or is **neutral** toward a claim.
+
+```
+Premise (from source): "QuantumScape and Tesla signed a joint development 
+agreement in Q1 2025 targeting next-generation solid-state cells."
+
+Hypothesis (from report): "Tesla has a partnership with QuantumScape."
+
+NLI Result: ENTAILMENT (confidence: 0.96)
+```
+
+**Models**: Use a fine-tuned DeBERTa-v3-large NLI model for fast, accurate entailment checking. For complex claims, use GPT-4o with an NLI-specific prompt.
+
+### Programmatic Verification
+
+Some claims can be verified computationally:
+
+- **Mathematical claims**: "40% higher than 357 Wh/kg" → Calculate: 357 × 1.4 = 499.8 ≈ 500 ✓
+- **Date claims**: "announced in March 2025" → Check publication dates of source documents.
+- **Ranking claims**: "the largest company by revenue" → Query financial APIs.
+
+**Implementation**: Build a library of verification functions that handle common claim patterns (percentages, rankings, dates, calculations). Fall back to LLM verification for claims that do not match any pattern.
+
+---
+
+## 3. Contradiction Detection
+
+### Types of Contradictions
+
+**Semantic Contradictions**: Two sources make logically incompatible claims about the same fact.
+- Source A: "The company was founded in 2018."
+- Source B: "The company was founded in 2019."
+
+**Temporal Contradictions**: Information that was once true but is no longer accurate.
+- Source A (2022): "The CEO is John Smith."
+- Source B (2024): "The CEO is Jane Doe."
+- Resolution: Jane Doe is the current CEO; John Smith was the former CEO.
+
+**Statistical Contradictions**: Different studies report different numbers for the same metric.
+- Source A: "The market size is \$200B."
+- Source B: "The market size is \$350B."
+- Resolution: Check methodology — are they measuring the same market segment? Are they using the same time period?
+
+### Detection Algorithm
+
+1. **Cluster related claims**: Group claims by topic using semantic similarity.
+2. **Pairwise comparison**: Within each cluster, compare all claim pairs for logical compatibility.
+3. **LLM evaluation**: For each potential contradiction, ask the LLM: "Do these two statements contradict each other? If so, explain the nature of the contradiction."
+4. **Classification**: Label each contradiction as `semantic`, `temporal`, or `statistical`.
+5. **Resolution strategy**: Apply the appropriate resolution based on type.
+
+### Resolution Strategies
+
+| Contradiction Type | Resolution |
+|:---|:---|
+| Semantic | Present the most authoritative source's claim, note the discrepancy |
+| Temporal | Use the most recent information, note the historical change |
+| Statistical | Present the range, explain methodological differences |
+| Unresolvable | Present both perspectives with clear attribution |
+
+---
+
+## 4. Hallucination Reduction
+
+Hallucinations occur when the LLM generates information that is not supported by the retrieved evidence. In a research context, hallucinations are catastrophic because they present fabricated information as fact.
+
+### Prevention Strategies
+
+**Grounded Generation**:
+- System prompt instructs the LLM: "You may ONLY use information from the provided context. If the context does not contain information to answer a question, state that the information is not available."
+- Every claim in the output must trace back to a specific context chunk.
+
+**Attribution Enforcement**:
+- After generation, run an attribution checker that verifies every factual statement has a corresponding source citation.
+- Statements without attribution are flagged for review or removal.
+
+**Self-Consistency Checking**:
+1. Generate the same response 3 times with temperature > 0.
+2. Compare the three responses for factual consistency.
+3. Claims that appear in all 3 responses are likely grounded. Claims that vary between responses are potentially hallucinated.
+
+**Retrieval-Augmented Verification Loop**:
+1. Generate the report draft.
+2. Extract all factual claims from the draft.
+3. For each claim, search the evidence store for supporting evidence.
+4. If no supporting evidence is found, flag the claim as potentially hallucinated.
+5. Either remove the claim or trigger additional research to find supporting evidence.
+
+### Hallucination Detection Metrics
+
+| Method | Detection Rate | False Positive Rate | Cost |
+|:---|:---|:---|:---|
+| Attribution checking | ~85% | Low | Low (programmatic) |
+| Self-consistency (3 samples) | ~75% | Medium | 3x generation cost |
+| NLI verification | ~90% | Low | Moderate |
+| Human review | ~98% | Very Low | Very High |
+
+**Recommendation**: Use attribution checking + NLI verification as the primary hallucination detection system. Use self-consistency checking for high-stakes research tasks. Reserve human review for medical, legal, or financial research.
+
+---
+
+## 5. Confidence Scoring
+
+### Per-Claim Confidence
+
+Each verified claim receives a confidence score based on:
+
+$$\text{Claim Confidence} = \frac{\sum_{i=1}^{n} \text{SCS}_i \cdot \text{NLI}_i}{n} \times P_c$$
+
+Where:
+- $\text{SCS}_i$ = Source Confidence Score of supporting source $i$
+- $\text{NLI}_i$ = NLI entailment confidence for source $i$
+- $n$ = number of supporting sources
+- $P_c$ = Contradiction penalty (1.0 if no contradictions, 0.6 if unresolved contradictions exist)
+
+### Section-Level Aggregation
+
+Section confidence is the weighted average of all claim confidences within that section:
+
+$$\text{Section Confidence} = \frac{\sum_{j=1}^{m} \text{Claim Confidence}_j \cdot \text{Importance}_j}{\sum_{j=1}^{m} \text{Importance}_j}$$
+
+Where $\text{Importance}_j$ reflects the centrality of each claim to the section's argument.
+
+### Report-Level Confidence
+
+The overall report confidence is the minimum section confidence:
+
+$$\text{Report Confidence} = \min(\text{Section Confidence}_1, \ldots, \text{Section Confidence}_k)$$
+
+**Rationale**: A report is only as trustworthy as its weakest section. Using `min` rather than `average` prevents a single well-sourced section from masking a poorly supported one.
+
+### User-Facing Presentation
+
+Confidence scores are presented to users as visual indicators:
+
+| Score Range | Label | Visual |
+|:---|:---|:---|
+| 0.9 - 1.0 | High Confidence | 🟢 Green |
+| 0.7 - 0.89 | Moderate Confidence | 🟡 Yellow |
+| 0.5 - 0.69 | Low Confidence | 🟠 Orange |
+| < 0.5 | Very Low Confidence | 🔴 Red |
+
+---
+
+## 6. Evidence-Based Reasoning
+
+### Chain-of-Evidence Construction
+
+For complex research conclusions, the system builds explicit reasoning chains linking evidence to conclusions:
+
+```
+Evidence 1: Toyota invested $13.5B in battery R&D in 2024 [Source: Reuters]
+Evidence 2: Toyota filed 847 solid-state battery patents in 2023-2024 [Source: WIPO]
+Evidence 3: Toyota announced pilot production line for 2027 [Source: Toyota IR]
+   ↓
+Intermediate Conclusion: Toyota is making substantial, verifiable 
+investment in solid-state battery commercialization.
+   ↓
+Evidence 4: Industry average R&D-to-production timeline is 5-8 years [Source: McKinsey]
+Evidence 5: Toyota's pilot line targets 2027, full production 2028-2030 [Source: Toyota IR]
+   ↓
+Final Conclusion: Toyota is on track for limited solid-state battery 
+production by 2027-2028, with full commercial deployment likely by 2029-2030.
+Confidence: 0.82 (Moderate-High)
+```
+
+### Strength-of-Evidence Classification
+
+| Classification | Description | Typical Source Types |
+|:---|:---|:---|
+| **Strong** | Multiple peer-reviewed studies, official government data, or direct company filings | Academic journals, SEC filings, government reports |
+| **Moderate** | Reputable news sources, industry analyst reports, expert interviews | Reuters, Bloomberg, McKinsey, Gartner |
+| **Weak** | Single-source claims, self-reported data, or sources with potential bias | Press releases, company blogs, trade publications |
+| **Anecdotal** | Personal accounts, social media posts, unverified claims | Twitter/X, Reddit, blog comments |
+
+### Handling Limited Evidence
+
+When the research topic has limited available evidence:
+
+1. **Acknowledge the gap**: "Limited peer-reviewed research exists on this topic."
+2. **Use the best available evidence**: Even anecdotal evidence is valuable when stated with appropriate caveats.
+3. **Recommend further research**: "This conclusion should be validated with primary research or expert interviews."
+4. **Lower confidence scores**: Automatically reduce section confidence when evidence volume is below threshold.
+
+**Trade-off**: Being transparent about evidence limitations reduces the perceived authority of the report but dramatically increases its trustworthiness. Users prefer a report that says "we don't know" over one that fabricates certainty.
+# Part J: Report Generation
+
+The report generation stage is the synthesis engine of the Deep Research system. It transforms fragmented, multi-source evidence into a cohesive, publication-grade analytical document. Moving from raw data points to a polished report requires structured planning, hierarchical generation, rigorous citation verification, and iterative critique loops.
+
+## Report Generation Pipeline Diagram
+
+```mermaid
+graph TD
+    A["Raw Evidence & Research Plan"] --> B["Evidence Aggregator"]
+    B --> C["HDBSCAN Clustering & Theme Extraction"]
+    C --> D["Deconfliction & Synthesis Engine"]
+    D --> E["Outline Generator Agent"]
+    E --> F["Hierarchical Outline (Section Nodes)"]
+    F --> G["Section Writer Agent"]
+    G --> H["Draft Generation (Section-by-Section)"]
+    H --> I["Reviewer Agent (Reflection Loop)"]
+    I -- "Rewrite Instructions" --> G
+    I -- "Approved Sections" --> J["Draft Assembler"]
+    J --> K["Critic Agent (Self-Critique System)"]
+    K -- "Critique Feedback" --> G
+    K -- "Passed Checklist" --> L["Quality Assurance Pipeline"]
+    L --> M["Formatting & Plagiarism Checker"]
+    L --> N["Readability & Hallucination Checker"]
+    M --> O["Final Gatekeeper Agent"]
+    N --> O
+    O --> P["Final Polished Report"]
+
+    %% Styling
+    classDef default fill:#1f2937,stroke:#374151,stroke-width:1px,color:#f3f4f6;
+    classDef highlight fill:#0369a1,stroke:#0284c7,stroke-width:2px,color:#fff;
+    class O,P highlight;
+```
+
+---
+
+## 1. Outline Generation
+
+### Dynamic vs. Static Outlining
+A production-grade Deep Research system rejects fixed, template-based structures. Instead, it employs **dynamic, evidence-driven outlining**. The structure of the final report is determined by the density and themes of the gathered facts, ensuring that the document naturally reflects the actual findings of the research.
+
+### Outline Generation Algorithm
+1. **Input Analysis**: The Outline Generator Agent ingests the core research plan, the user's initial query, and any clarification logs.
+2. **Thematic Clustering**: The agent queries the semantic index of the Evidence Database to discover main themes and sub-topics.
+3. **Macro-Structure Planning**: The agent generates a high-level structure (e.g., Executive Summary, Background, Technical Deep Dive, Market Impacts, Future Outlook).
+4. **Evidence Density Assessment**: For each proposed section, the agent measures the volume of relevant facts in the store.
+   - If a section has high evidence density, the agent splits it into specific subsections.
+   - If a section has thin evidence, the agent merges it with related topics to avoid empty or repetitive sections.
+5. **Section Specifications (Specs)**: The agent outputs a structured JSON document representing the outline. Each node contains a title, a brief writing prompt, target word count, and a list of specific evidence IDs to include.
+
+```json
+{
+  "section_id": "SEC_3_2",
+  "title": "Solid-State Battery Production Timelines",
+  "target_word_count": 600,
+  "writing_prompt": "Analyze the projected commercial scale-up dates for solid-state batteries. Contrast automotive timelines (Toyota, QuantumScape) with consumer electronics.",
+  "evidence_mappings": ["EVC_045", "EVC_112", "EVC_289"],
+  "parent_id": "SEC_3_0"
+}
+```
+
+---
+
+## 2. Evidence Aggregation
+
+### HDBSCAN Clustering
+To prevent the writing agents from being overwhelmed by thousands of duplicate search snippets and document chunks, the system aggregates evidence before drafting begins. The system runs **HDBSCAN** (Hierarchical Density-Based Spatial Clustering of Applications with Noise) on the vector embeddings of all retrieved evidence to group similar facts together.
+
+### Synthesis & Deconfliction
+1. **Redundancy Elimination**: For each cluster, a fast summarization model (e.g., Gemini 1.5 Flash) collapses overlapping snippets into a single, high-density factual statement.
+2. **Contradiction Marking**: If the clustering process groups conflicting data points (e.g., one source states Toyota’s pilot line starts in 2027, while another states 2028), the aggregation engine marks this node as `CONTRADICTORY` and appends both viewpoints with their respective source trust scores.
+3. **Evidence Package Creation**: The output is an **Evidence Package** mapped directly to the corresponding outline nodes, filtering out irrelevant noise.
+
+The density of evidence for any given section node $S$ is calculated programmatically using the following formula:
+
+$$\text{Evidence Density}(S) = \frac{\sum_{e \in E_S} \text{Relevance}(e, S)}{\text{Length}(S)}$$
+
+Where $E_S$ is the set of evidence fragments mapped to section $S$, and $\text{Relevance}(e, S)$ is the cosine similarity score between the evidence embedding and the section's conceptual summary.
+
+---
+
+## 3. Citation Management
+
+Strict tracking of data provenance is a hard requirement for deep research. Every factual claim must be backed by a verifiable source citation that links back to the original document, webpage, or file.
+
+### Citation Workflow Diagram
+
+```mermaid
+graph TD
+    RawScrape["Raw Web Page / Document Scrape"] --> Extractor["Information Extractor"]
+    Extractor --> StoreSnippet["Extract Factual Snippets & Metadata"]
+    StoreSnippet --> CitationDb["Citation DB: Register Snippet (Metadata, URL, ID)"]
+    CitationDb --> AssignId["Assign Citation ID (e.g., CIT-045)"]
+    
+    AssignId --> ContextPrep["Context Preparation: Evidence Block + Citation ID"]
+    ContextPrep --> LLMWriter["LLM Writer Agent"]
+    
+    LLMWriter --> GenDraft["Generate Draft with Citations [CIT-045]"]
+    GenDraft --> RegexParser["Regex Parser: Extract Citation IDs"]
+    RegexParser --> NLIEvaluator["NLI Entailment Evaluator"]
+    
+    CitationDb --> NLIEvaluator
+    NLIEvaluator -- "Claim Entailed" --> FormatCitation["Format Citations (APA / MLA / IEEE)"]
+    NLIEvaluator -- "Claim Not Entailed" --> FlagHallucination["Flag Hallucination / Reject Claim"]
+    
+    FormatCitation --> FinalRender["Final Rendered Report with Hyperlinks"]
+
+    %% Styling
+    classDef default fill:#1f2937,stroke:#374151,stroke-width:1px,color:#f3f4f6;
+    classDef highlight fill:#0369a1,stroke:#0284c7,stroke-width:2px,color:#fff;
+    class CitationDb,NLIEvaluator highlight;
+```
+
+### Verification & Alignment Checks
+During generation, the LLM is provided with evidence blocks prefixed with distinct citation tags (e.g., `[Source ID: CIT-098]`). The writer agent must insert these tags inline. 
+
+Post-generation, the citation engine extracts these tags and runs a programmatic verification loop:
+- **Existence Check**: Verifies that the citation ID exists in the research session's active registry.
+- **Natural Language Inference (NLI) Verification**: An entailment model verifies that the sentence containing the citation is logically supported by the registered snippet:
+
+$$\text{NLI}(\text{Claim}, \text{Snippet}) \in \{\text{Entailment}, \text{Neutral}, \text{Contradiction}\}$$
+
+If the score indicates `Neutral` or `Contradiction`, the citation is flagged as invalid, and the claim is sent back for correction.
+
+---
+
+## 4. Draft Generation
+
+### Hierarchical Section-by-Section Generation
+Attempting to generate a massive, 10,000-word report in a single LLM call is a recipe for failure due to context window drift, style degradation, and prompt-following decay. Production-grade systems generate reports **hierarchically and iteratively**, processing one section node at a time.
+
+### Context Window Allocation
+To maintain consistency across sections, the Section Writer Agent is provided with a carefully structured context window:
+
+| Context Component | Allocation (%) | Purpose |
+|:---|:---|:---|
+| **System Prompt & Style Guide** | 10% | Defines tone, formatting, and strict citation guidelines |
+| **Global Report Outline** | 15% | Provides macro-level context and structural roadmap |
+| **Running Summary of Prior Sections**| 15% | Prevents repetition and ensures cohesive transitions |
+| **Target Evidence Package** | 50% | Contains the aggregated evidence clusters for this section |
+| **Scratchpad Buffer** | 10% | Working memory for reasoning before generation |
+
+### Parallel vs. Sequential Drafting
+Modern architectures balance writing speed and cohesive flow by choosing between parallel and sequential drafting:
+
+```
+Parallel Drafting:
+[Sec 1 Evid] ──> [Writer Agent 1] ──> [Draft 1] ┐
+[Sec 2 Evid] ──> [Writer Agent 2] ──> [Draft 2] ├─> [Global Cohesion Pass] ──> Final Report
+[Sec 3 Evid] ──> [Writer Agent 3] ──> [Draft 3] ┘
+
+Sequential Drafting:
+[Sec 1 Evid] ──> [Writer Agent] ──> [Draft 1] ──┐
+                                                ▼
+[Sec 2 Evid] ──> [Writer Agent + Draft 1 Summary] ──> [Draft 2] ──┐
+                                                                  ▼
+[Sec 3 Evid] ──> [Writer Agent + Draft 1&2 Summaries] ──> [Draft 3] ──> Final Report
+```
+
+- **Parallel Drafting**: Section writer agents run concurrently. This is extremely fast (reduces draft latency from minutes to seconds) but requires a heavy "Global Cohesion Pass" at the end to correct stylistic drift, inconsistent terminology, and repetitive introductory transitions.
+- **Sequential Drafting**: The agent writes Section 1, generates a semantic summary of it, appends this summary to the context for Section 2, and so on. This maintains a natural narrative flow but creates a sequential dependency that increases wall-clock latency.
+- **Production Choice**: Most systems use a hybrid approach: **parallel generation of subsections** within a major chapter, but **sequential progression between major chapters**.
+
+---
+
+## 5. Reflection Loops
+
+Once a section draft is generated, it does not immediately advance to assembly. It enters a local reflection loop governed by a Reviewer Agent.
+
+```
+                  ┌──────────────────────────────┐
+                  │                              │
+                  ▼                              │
+       ┌──────────────────────┐                  │
+       │ Section Writer Agent │                  │
+       └──────────┬───────────┘                  │
+                  │                              │ Write feedback
+                  │ Section Draft                │ & instructions
+                  ▼                              │
+       ┌──────────────────────┐                  │
+       │    Reviewer Agent    │                  │
+       └──────────┬───────────┘                  │
+                  │                              │
+                  │ Checks:                      │
+                  │ - Outline Objectives Met?    │
+                  │ - Evidence Fully Mapped?     │
+                  │ - Citation Integrity?        │
+                  │                              │
+                  ├─ [Gaps / Issues Found] ──────┘
+                  │
+                  └─ [Checks Passed] ──> Approved Section Draft
+```
+
+The Reviewer Agent evaluates the draft against a checklist:
+1. **Objective Coverage**: Does the text address all points in the section's writing prompt?
+2. **Evidence Extraction Rate**: Were all critical facts in the Evidence Package successfully incorporated, or were some ignored?
+3. **Style Compliance**: Is the Flesch-Kincaid grade level within the target range? Is the tone objective and free from marketing adjectives?
+
+If issues are found, the Reviewer generates a list of correction instructions. The Writer Agent then edits the draft using a diff-based replacement to minimize token regeneration.
+
+---
+
+## 6. Self-Critique Systems
+
+While reflection loops operate locally at the section level, the **Self-Critique System** operates globally on the fully assembled draft. The Critic Agent acts as an adversarial judge, seeking to find structural weaknesses, logical flaws, and source gaps in the report.
+
+### Evaluation Criteria & Grading
+
+| Dimension | Metric | Measurement Method | Target Score |
+|:---|:---|:---|:---|
+| **Factuality & Grounding** | NLI Entailment | Ratio of entailed claims to total claims | $\ge 0.95$ |
+| **Neutrality & Bias** | Sentiment Analysis | Token density of subjective adjectives | $\le 0.02$ |
+| **Redundancy** | Semantic Similarity | Pairwise cosine similarity of paragraphs | $\le 0.40$ |
+| **Structural Logic** | Graph Coherence | Logical path validation across chapters | Binary Pass/Fail |
+
+### Execution of Global Edits
+If the Critic Agent assigns a score below the target threshold on any dimension, it generates a global edit directive. Rather than feeding the entire 10,000-word document back to a single LLM (which exceeds standard output token limits and degrades quality), the orchestration layer dispatches targeted rewrite tasks to the specific sub-agents responsible for the failing sections.
+
+---
+
+## 7. Quality Assurance Pipelines
+
+The QA pipeline is the final programmatic gatekeeper. It does not write or analyze content; it verifies structural integrity and compliance.
+
+1. **Formatting Validator**: Programmatically parses the Markdown AST (Abstract Syntax Tree) to verify:
+   - Nested heading hierarchy (no `###` directly under `#`).
+   - Table rendering (valid column counts, alignment pipes).
+   - Clickable citations (matching reference footnotes).
+2. **Plagiarism & Verbatim Checks**: Compares sentences in the draft against the raw crawled data. Any sentence showing more than 70% token overlap is flagged as a plagiarism risk. The system automatically triggers a paraphrasing re-generation loop on the offending sentence.
+3. **Link Checker**: Programmatically tests every URL in the reference list to ensure it returns a `200 OK` status and is not a broken crawl link.
+4. **Final Gatekeeper Pass**: A highly capable reasoning model (e.g., Claude 3.5 Sonnet or GPT-4o) reads the fully assembled document for a final structural check, ensuring that transition points between chapters are smooth, formatting is consistent, and the report reads as if written by a single, cohesive human voice.
+
+---
+
+# Part K: Technology Stack Analysis
+
+To serve millions of users with reliable, high-performance Deep Research capabilities, developers must carefully assemble a production-grade infrastructure stack. The orchestrations, models, databases, and search clusters must be selected to balance low latency, high throughput, and cost-efficiency.
+
+## End-to-End Evidence-to-Report Flow
+
+```mermaid
+graph TD
+    %% Ingestion & Search
+    subgraph Data Acquisition
+        UserQuery["User Input Query"] --> QueryPlanner["Query Planner Agent"]
+        QueryPlanner --> SearchEngine["Search Engine Cluster (Bing / Google)"]
+        QueryPlanner --> WebCrawler["Web Crawler Cluster (Playwright / Colly)"]
+        SearchEngine --> DocumentStore["Raw HTML / PDF Object Store (S3)"]
+        WebCrawler --> DocumentStore
+    end
+
+    %% Document Processing & Retrieval
+    subgraph Understanding & Storage
+        DocumentStore --> PDFEngine["PDF/OCR Engine (Marker / PyMuPDF)"]
+        PDFEngine --> VectorDb["Vector Database (Qdrant)"]
+        PDFEngine --> RelationalDb["Metadata & Citation Database (PostgreSQL)"]
+    end
+
+    %% Synthesis & Generation
+    subgraph Iterative Synthesis & Generation
+        VectorDb --> RAGEngine["RAG Retrieval & Re-ranking"]
+        RAGEngine --> EvidenceAggregator["Evidence Aggregator"]
+        EvidenceAggregator --> OutlineGen["Outline Generator Agent"]
+        OutlineGen --> SectionWriter["Section Writer Agent"]
+        SectionWriter --> SectionReview["Section Reviewer Loop"]
+        SectionReview -- "Review Failed" --> SectionWriter
+        SectionReview -- "Review Passed" --> DraftAssembler["Draft Assembler"]
+    end
+
+    %% Final Polish
+    subgraph Quality Assurance & Delivery
+        DraftAssembler --> GlobalCritic["Global Critic Agent"]
+        GlobalCritic -- "Critique Failed" --> SectionWriter
+        GlobalCritic -- "Critique Passed" --> QAPipeline["QA Pipeline (Lints / Plagiarism Checks)"]
+        QAPipeline --> Gatekeeper["Gatekeeper Agent"]
+        Gatekeeper --> FinalReport["Final Polished Report"]
+    end
+
+    %% Styling
+    classDef default fill:#1f2937,stroke:#374151,stroke-width:1px,color:#f3f4f6;
+    classDef highlight fill:#0369a1,stroke:#0284c7,stroke-width:2px,color:#fff;
+    class VectorDb,RelationalDb,FinalReport highlight;
+```
+
+---
+
+## 1. Large Language Models (LLMs)
+
+A modern Deep Research system does not rely on a single LLM. It routes different sub-tasks to specialized models to optimize for reasoning depth, speed, context window limits, and cost.
+
+### Production Routing Architecture
+
+| Sub-task / Agent | Recommended Model | Alternative Models | Rationale for Recommendation |
+|:---|:---|:---|:---|
+| **Query Planning & Outline Generation** | **GPT-4o / o3-mini** | Claude 3.5 Sonnet, Gemini 1.5 Pro | High-level planning requires superior logical reasoning, graph creation, and precise execution strategy design. |
+| **Evidence Extraction & Document Scraping** | **Gemini 1.5 Flash** | GPT-4o-mini, Llama-3-8B-Instruct | Deep Research requires scanning thousands of pages. Gemini 1.5 Flash offers low cost, high speed, and a large native context window. |
+| **Section Drafting** | **Claude 3.5 Sonnet** | Gemini 1.5 Pro, GPT-4o | Claude 3.5 Sonnet consistently produces the highest quality, most natural, and structured prose. |
+| **Global Critique & Quality Gate** | **GPT-4o / Gemini 1.5 Pro** | Claude 3.5 Sonnet | The final review requires a robust, neutral evaluator with a strong instruction-following profile. |
+
+### Technical Trade-offs & Production Metrics
+
+- **GPT-4o / o1 / o3-mini**:
+  - *Trade-offs*: Superior complex reasoning and planning, but high API costs and strict rate limits.
+  - *Cost Considerations*: High token costs (\$2.50 to \$15.00 per million tokens) make it unsuitable for high-volume raw scraping summarization.
+  - *Scaling Limitations*: Rate limits of 10,000 RPM (Requests Per Minute) require queue structures for large deployments.
+- **Claude 3.5 Sonnet**:
+  - *Trade-offs*: Exceptional narrative flow and markdown formatting compliance, but smaller maximum context limits compared to Gemini.
+  - *Cost Considerations*: Moderate-high cost (\$3.00/M input, \$15.00/M output tokens).
+  - *Scaling Limitations*: Strict concurrent token limits on Anthropic API require internal request balancing.
+- **Gemini 1.5 Pro / Flash**:
+  - *Trade-offs*: Massive 2-million token context window allows ingest of complete, un-chunked user files and large document sets, but Flash can exhibit lower formatting compliance compared to Claude.
+  - *Cost Considerations*: Extremely cheap Flash model (\$0.075/M input tokens under 128k context) reduces ingestion cost by 80-90%.
+  - *Scaling Limitations*: Latency can spike when context usage exceeds 500k tokens.
+
+---
+
+## 2. Agent Frameworks
+
+Developers must decide whether to use off-the-shelf multi-agent libraries or build custom execution logic.
+
+### Framework Evaluation
+
+| Framework | Recommended Use | Production Trade-offs | Cost & Operational Complexity |
+|:---|:---|:---|:---|
+| **LangGraph** | Complex state machines, cyclic agent loops, and graph-based execution. | High learning curve, debugging nested state graphs is difficult, and state schemas can be rigid. | Moderate. Requires Redis or PostgreSQL for checkpointing state. |
+| **CrewAI** | High-level, role-playing multi-agent systems and quick prototyping. | Lacks granular control over token budgets, tends to enter loops, and is difficult to debug at scale. | High token overhead due to generic, verbose default prompts. |
+| **LlamaIndex Workflows** | Document-centric RAG pipelines and linear research agents. | Less flexible for complex cyclic workflows (e.g., self-critique loops). | Moderate. Highly optimized for retrieval but less for multi-agent negotiation. |
+| **Custom Asynchronous Orchestrator (Temporal.io)** | **Recommended for Production**. Custom Python state machines executed via durable task runners. | Requires writing custom checkpointing, state serialization, and retry logic. | Low infrastructure overhead, maximum control over model calls, and absolute reliability. |
+
+### Why Custom Orchestration is Better
+Off-the-shelf frameworks (LangGraph, CrewAI) are excellent for proof-of-concepts but present serious operational hazards in production:
+1. **Hidden Prompts**: Off-the-shelf tools inject complex, verbose prompts that lead to unexpected token costs.
+2. **Brittle State Control**: Deep Research agents can run for 30 minutes. If an API call fails 20 minutes in, standard libraries often lack the ability to resume from an exact checkpoint, causing the system to restart and waste \$5.00+ in model calls.
+3. **Execution Reliability**: Building directly on **Temporal.io** or a custom queue ensures that every state transition, search call, and drafting step is durably stored. If the worker server crashes, execution resumes exactly where it left off.
+
+---
+
+## 3. Search Infrastructure
+
+A Deep Research system is only as good as the information it retrieves. The search layer must be fast, comprehensive, and clean.
+
+### Search APIs Comparison
+
+| Search API | Recommended Use | Search Coverage | Cost | Limitations |
+|:---|:---|:---|:---|:---|
+| **Bing Web Search API** | **Recommended**. Broad index, fast response, stable API. | Outstanding. Includes news and recency filters. | \$3.00 to \$7.00 per 1,000 queries. | Strict query syntax limits, pricing scales quickly at high volume. |
+| **Google Search API** | Secondary fallback search index. | Best-in-class coverage. | \$5.00 per 1,000 queries. | Rigid daily query quotas and rate-limiting. |
+| **Tavily / Exa** | **Recommended** for AI research agents. Returns clean, parsed Markdown instead of raw HTML. | Specialized for AI scraping. | \$10.00 to \$20.00 per 1,000 queries. | Smaller historical index compared to Google/Bing; higher base cost. |
+| **SearxNG Cluster** | Self-hosted meta-search engine. | Aggregates 70+ search engines. | Free (Infrastructure hosting costs only). | Requires maintaining proxy pools to avoid search engine blocking. |
+
+### Production Setup
+Use a **hybrid search router**:
+- Dispatch primary queries to **Bing Web Search API** for broad index recall.
+- Route targeted academic, technical, or company-specific queries to **Exa** to retrieve pre-cleaned, scrape-ready markdown.
+- Maintain a local, self-hosted cluster of **SearxNG** behind proxy rotators as a cost-control fallback for high-throughput tiers.
+
+---
+
+## 4. Databases & Storage Layers
+
+Deep Research operations generate massive amounts of intermediate data (HTML page caches, parsed PDFs, execution states, citation records, generated drafts).
+
+### Storage Architecture
+
+- **Relational Metadata Store: PostgreSQL**
+  - *Recommended Use*: Research session states, user queries, query graphs, citation registries, and user billing/rate limit tracking.
+  - *Why PostgreSQL*: Offers transaction safety, robust JSONB support (ideal for dynamic state trees), and native integration with key vector extensions.
+  - *Alternatives*: DynamoDB (for low-latency state retrieval, but lacks complex relational queries for citations).
+- **Object Store: AWS S3 or MinIO**
+  - *Recommended Use*: Caching raw crawled HTML documents, scraped PDFs, visual assets, and full generated report artifacts.
+  - *Why S3*: Incredibly cheap storage (\$0.023/GB/month) and highly durable. Keeping raw scraped files allows the system to re-extract facts later without re-crawling the web.
+  - *Alternatives*: Local filesystem storage (fails to scale across containerized workloads).
+
+---
+
+## 5. Vector Databases & Embeddings
+
+Vector stores power the semantic retrieval (RAG) pipeline, allowing the agents to quickly find relevant facts across hundreds of scraped sources.
+
+### Vector Databases Comparison
+
+| Database | Recommended Use | Vector Performance | Filtering Capabilities | Operational Overhead |
+|:---|:---|:---|:---|:---|
+| **Qdrant** | **Recommended**. Dedicated vector database. | Exceptional search speeds, low memory foot-print. | Native payload filtering (filter by source URL, date range, collection run). | Low (managed cloud or single Docker container). |
+| **pgvector** | **Recommended** for small-to-medium teams. Integrated into PostgreSQL. | Good. Satisfactory for datasets under 10 million vectors. | Relational SQL joins and traditional filters. | Zero (uses existing PostgreSQL database). |
+| **Pinecone** | Serverless vector database. | High scaling capacity. | Metadata filtering is slower compared to Qdrant. | Low (fully managed SaaS). |
+| **Milvus / Weaviate** | Large enterprise datasets (100M+ vectors). | Excellent. | Complex query DSL. | High. Requires Kubernetes cluster management. |
+
+### Embedding Model Selection
+- **OpenAI text-embeddings-3-large** (3072 dimensions): Exceptional semantic accuracy and support for dimension reduction (matryoshka embeddings) to optimize vector database costs.
+- **Cohere Embed v3**: Best-in-class for multi-lingual research tasks and search relevance. Highly recommended if the system must scrape non-English sources.
+
+---
+
+## 6. Orchestration & Coordination Layers
+
+Deep Research tasks are long-running (5 to 30 minutes) and involve hundreds of flaky, asynchronous network requests. A failure in one web scraping task should not crash the entire research run.
+
+### Orchestration Stack
+
+```
+                     ┌────────────────────────┐
+                     │   User Ingest Request  │
+                     └───────────┬────────────┘
+                                 │
+                                 ▼
+                     ┌────────────────────────┐
+                     │   Temporal.io Worker   │
+                     └───────────┬────────────┘
+                                 │
+       ┌─────────────────────────┼─────────────────────────┐
+       │ (Stage 1: Plan)         │ (Stage 2: Scrape)       │ (Stage 3: Draft)
+       ▼                         ▼                         ▼
+┌──────────────┐          ┌──────────────┐          ┌──────────────┐
+│  Planning    │          │ Crawler      │          │ Writer       │
+│  Activity    │          │ Activity     │          │ Activity     │
+└──────────────┘          └──────────────┘          └──────────────┘
+       │                         │                         │
+       └─────────────────────────┼─────────────────────────┘
+                                 │
+                                 ▼
+                     ┌────────────────────────┐
+                     │  State DB Checkpoint   │
+                     │ (PostgreSQL JSONB / S3)│
+                     └────────────────────────┘
+```
+
+- **Execution Engine: Temporal.io**
+  - *Why it is critical*: Temporal provides **durable execution**. It tracks the call stack and state of the orchestration engine. If the worker node dies mid-research, Temporal moves the workflow to a healthy worker node and resumes from the last completed Activity.
+  - *Trade-offs*: Requires developers to structure their agent code into explicit Workflows and Activities, which increases upfront development time.
+- **Task Queues: Celery + Redis**
+  - *Recommended Use*: Handling lightweight, parallel scraping tasks (e.g., worker pool to fetch 100 web pages concurrently).
+  - *Why Celery*: Highly efficient for scaling horizontal I/O-bound workers, leaving Temporal to focus on managing the high-level agent logic.
+
+---
+
+## 7. Observability & Logging Systems
+
+Debugging a system with dozens of autonomous agents executing in parallel requires tracing tools that monitor both system-level and LLM-specific telemetry.
+
+### Telemetry Stack
+
+1. **LLM Tracing: Langfuse or LangSmith**
+   - *Recommended*: **Langfuse** (Open-source, self-hostable, low performance overhead).
+   - *Capabilities*: Captures the exact input prompts, system templates, parameters, output tokens, latency, and costs for every single LLM call. Allows developers to visualize the entire tree of agent-to-agent delegation.
+2. **Application Performance Monitoring (APM): OpenTelemetry + Datadog / Grafana**
+   - *Recommended*: **Prometheus & Grafana** (cost-effective) or **Datadog** (enterprise-grade).
+   - *Capabilities*: Tracks system-level health: container memory usage, search API latencies, vector search indexing queues, and CPU usage during PDF OCR processing.
+
+---
+
+## 8. Evaluation & Benchmarking Systems
+
+Because LLM behavior is non-deterministic, changes to prompt templates or models can cause regressions in report quality. Developers need continuous, automated evaluation.
+
+### Evaluation Stack
+
+- **CI/CD Unit Testing: Promptfoo or DeepEval**
+  - *How it works*: Developers maintain a "Golden Dataset" of 100 diverse research queries (e.g., "Summarize ASML's 2025 financial reports"). On every pull request, the CI/CD pipeline runs the research agent on this dataset and evaluates the outputs programmatically.
+  - *Metrics Analyzed*:
+    - **Groundedness**: Ratio of report claims that are verified by the source snippets.
+    - **Relevance**: Does the report answer the user's specific prompt?
+    - **Formatting**: Does the output comply with Markdown lints?
+- **LLM-as-a-Judge Evaluation**
+  - Using a high-tier reasoning model (GPT-4o) to compare the current generation against a previously approved baseline. The judge model scores the output on structured rubrics and flags any dropped information or newly introduced hallucinations.
+
+---
+
+## 9. Production Comparison of ChatGPT, Perplexity, and Gemini Deep Research
+
+While the internal details of these proprietary systems are closely guarded secrets, analyzing public disclosures, system behaviors, API payloads, and performance profiles allows us to reverse engineer their likely technology configurations:
+
+| Component | ChatGPT Deep Research | Perplexity Deep Research | Gemini Deep Research |
+|:---|:---|:---|:---|
+| **Core LLM Engine** | GPT-4o / o1 / o3-mini (reasoning model for complex path planning) | Sonar (Mistral/Llama fine-tune) + Claude 3.5 Sonnet / GPT-4o | Gemini 1.5 Pro & Gemini 1.5 Flash (leveraging long context) |
+| **Search Engine** | Bing Search + custom internal OpenAI index | Perplexity Search API + Bing + Google | Google Search API |
+| **Scraping Layer** | Custom headless Chrome farm (simulates browser activity) | Custom Node/Go scraper cluster + proxy rotation | Custom Google search crawler |
+| **Agent Topology** | Cyclic hierarchical planning, o3-mini routes research tasks | Linear-chain planning with fast search refinement loops | Native multi-agent loops integrated into long-context memory |
+| **Memory Strategy** | Thread-level state storage, persistent user session data | Session-level key-value caches and query graphs | 2M Token context window serving as primary memory |
+| **Database Stack** | Highly likely custom Cassandra / DynamoDB + object stores | Postgres + Redis cache + custom vector indices | Google Spanner + BigTable + internal vector search indexes |
+| **Primary Strength** | Unmatched logical path planning and step-by-step reasoning | Extremely fast scraping, crawling, and synthesis latency | Seamless processing of massive, multi-megabyte user uploads |
+| **Core Limitation** | High latency (often takes 3-10 minutes to run a plan) | Deep sections can read like summarized search snippets | Prone to formatting decay under very long context loads |
+
+---
+
+
+## 10. ChatGPT Deep Research Stack & Workflow
+
+ChatGPT Deep Research is engineered around deliberate, multi-step logical reasoning. It treats research as an optimization problem, utilizing high-reasoning models (such as o1 and o3-mini) to plan, evaluate, and refine search graphs. The system is designed to execute deep, multi-minute reasoning loops, sacrificing immediate latency to ensure high factuality and comprehensive coverage.
+
+### ChatGPT Deep Research Flow Diagram
+
+```mermaid
+graph TD
+    UserQuery["User Research Prompt"] --> Ingestion["Session Manager (Postgres/DynamoDB)"]
+    Ingestion --> Planner["Planner Agent (o1 / o3-mini)"]
+    
+    subgraph Execution Loop
+        Planner --> DAG["Dynamic Execution DAG (State Graph)"]
+        DAG --> Router["Task Router (orchestrated via Temporal.io)"]
+        
+        Router --> Crawler["Chrome Headless Crawler Cluster (Playwright/Puppeteer)"]
+        Router --> Search["Bing Search API Wrapper"]
+        
+        Crawler --> Extraction["Parser Agent (GPT-4o-mini)"]
+        Search --> Extraction
+        
+        Extraction --> Memory["Semantic Memory Store (Qdrant / S3)"]
+        Memory --> Evaluator["Synthesizer & Gap Evaluator (GPT-4o)"]
+        
+        Evaluator -- "Gaps Found (New Sub-tasks)" --> Planner
+    end
+    
+    Evaluator -- "Research Finished" --> DraftPlanner["Outline & Report Planner (o1)"]
+    DraftPlanner --> SecWriters["Section Writers (GPT-4o)"]
+    SecWriters --> Critic["Adversarial Critic Agent (o1-preview)"]
+    Critic -- "Revision Loop" --> SecWriters
+    Critic -- "Approve" --> Delivery["Markdown Report Delivery"]
+
+    %% Styling
+    classDef default fill:#1f2937,stroke:#374151,stroke-width:1px,color:#f3f4f6;
+    classDef highlight fill:#0369a1,stroke:#0284c7,stroke-width:2px,color:#fff;
+    class Planner,Evaluator highlight;
+```
+
+### Operational Workflow
+1. **Goal Formulation**: The user query is sent to an **o1-preview** or **o3-mini** model. The model spends several seconds of internal test-time compute planning the research path, defining search strategies, and outputting an execution Directed Acyclic Graph (DAG).
+2. **Asynchronous Scraping**: Tasks are pushed to a Temporal queue. Node.js/Python headless browsers (Chrome containers managed via Playwright) crawl target pages. Factual chunks are extracted via **GPT-4o-mini** and indexed.
+3. **Dynamic Path Refinement**: A **GPT-4o** model synthesizes the findings from the initial search pass. If it detects logical gaps or missing details, it sends a structured JSON payload back to the planner, which dynamically appends new nodes to the execution DAG.
+4. **Drafting and adversarial review**: Once the research graph is fully resolved, o1 structures the outline, GPT-4o generates the text, and o1 reviews the draft to ensure complete grounding before rendering the report.
+
+### Component Stack Analysis
+
+#### LLM Layer
+- *Likely Technologies*: **o1**, **o3-mini** (reasoning and planning), **GPT-4o**, **GPT-4o-mini** (extraction and drafting).
+- *Alternatives*: Claude 3.5 Sonnet + Custom CoT reasoning prompt.
+- *Chosen Approach Rationale*: OpenAI's native o-series models utilize reinforcement learning with a chain-of-thought architecture, making them superior at creating execution plans and detecting logical contradictions compared to standard instruction-tuned models.
+- *Trade-offs*: High cost and elevated output latency (often requiring 10-30 seconds of reasoning before returning a single token).
+- *Cost Considerations*: o-series models cost up to \$15.00 per million output tokens. The system manages costs by routing simple extraction tasks to GPT-4o-mini (\$0.60/M tokens).
+- *Scaling Limitations*: Strict rate limits (RPM/TPM) on reasoning API endpoints require aggressive queuing.
+
+#### Agent Framework
+- *Likely Technologies*: **Custom Python State Graph engine** (proprietary evolution of LangGraph-like architectures).
+- *Alternatives*: LangGraph, AutoGen.
+- *Chosen Approach Rationale*: Off-the-shelf frameworks lack the memory footprint control and granular token tracking required to serve millions of users without massive resource leakage.
+- *Trade-offs*: High internal engineering overhead to maintain, optimize, and build custom debugging tools.
+- *Cost Considerations*: Custom engines minimize token overhead by stripping out generic framework prompts.
+- *Scaling Limitations*: Requires custom in-memory graph serialization layers to avoid database connection bottlenecks.
+
+#### Search Infrastructure
+- *Likely Technologies*: **Bing Search API Wrapper** supplemented by OpenAI's internal web indices.
+- *Alternatives*: Google Search API, Tavily.
+- *Chosen Approach Rationale*: Bing provides a stable, enterprise-grade search API with high rate limits and comprehensive indexing, which OpenAI matches with its own internal cache pools.
+- *Trade-offs*: Bing's organic ranking can sometimes prioritize ad-heavy content over clean informational resources.
+- *Cost Considerations*: Bing API costs \$3.00 to \$7.00 per 1,000 queries. Cache hits on OpenAI's internal index reduce external API bills.
+- *Scaling Limitations*: Bing API quotas require robust multi-tenant key rotation structures.
+
+#### Databases & Vector Stores
+- *Likely Technologies*: **Cassandra / DynamoDB** (session states) + **Qdrant** (semantic vector search).
+- *Alternatives*: PostgreSQL (pgvector), Pinecone.
+- *Chosen Approach Rationale*: Qdrant offers sub-millisecond retrieval speeds and advanced payload filtering (allowing the agent to search within a specific crawl execution run).
+- *Trade-offs*: Running Qdrant as a standalone service increases infrastructure surface area.
+- *Cost Considerations*: Managed vector stores are expensive; hosting custom Qdrant instances in Kubernetes reduces base costs.
+- *Scaling Limitations*: Memory usage grows linearly with the number of active, concurrent research runs.
+
+#### Orchestration Layer
+- *Likely Technologies*: **Temporal.io** for workflow orchestration + **Kubernetes** for scaling crawling agents.
+- *Alternatives*: Apache Airflow, Ray.
+- *Chosen Approach Rationale*: Temporal guarantees that if a crawling container crashes 15 minutes into a research run, the agent state is preserved and execution resumes automatically.
+- *Trade-offs*: Higher developer friction due to strict separation of workflows and activities.
+- *Cost Considerations*: Open-source Temporal self-hosting costs only compute resources.
+- *Scaling Limitations*: High database I/O on Temporal state databases under massive concurrent runs.
+
+#### Observability & Evaluation
+- *Likely Technologies*: **Custom Internal LLM Telemetry (similar to LangSmith)** + **Datadog** + **Internal NLI evaluation classifiers**.
+- *Alternatives*: Langfuse, DeepEval.
+- *Chosen Approach Rationale*: Proprietary internal tooling allows OpenAI to trace prompt inputs without sending data outside their security boundary.
+- *Trade-offs*: Requires continuous developer resources to maintain trace tools.
+- *Cost Considerations*: Eliminates external logging SaaS costs.
+- *Scaling Limitations*: Logging millions of token traces requires a dedicated data-lake partition.
+
+---
+
+## 11. Perplexity Deep Research Stack & Workflow
+
+Perplexity Deep Research is optimized for low latency, real-time search indexing, and rapid answer synthesis. It prioritizes speed, streaming drafts to users in real-time. Instead of executing deeply nested reasoning chains, Perplexity relies on rapid, parallel query expansion and efficient web scraping to assemble its report components.
+
+### Perplexity Deep Research Flow Diagram
+
+```mermaid
+graph TD
+    UserQuery["User Input Query"] --> FastRouter["Query Intent Router (Sonar Model)"]
+    
+    subgraph Parallel Search Engine
+        FastRouter --> SearchAPIs["Perplexity Index + Bing Search API"]
+        SearchAPIs --> Crawler["Go-based Page Fetcher (Colly/Raw HTTP)"]
+        Crawler --> TextExtractor["Markdown Converter & Clean-up"]
+    end
+    
+    subgraph Real-Time Synthesis
+        TextExtractor --> SemanticRanker["Semantic Re-ranker (Cohere Rerank)"]
+        SemanticRanker --> MemoryCache["In-Memory Cache (Redis)"]
+        MemoryCache --> Synthesizer["Synthesizer Agent (Claude 3.5 Sonnet / Sonar-Large)"]
+    end
+    
+    Synthesizer -- "Refinement Queries" --> FastRouter
+    Synthesizer -- "Evidence Package Ready" --> DraftEngine["Drafting Engine (Claude 3.5 Sonnet)"]
+    DraftEngine --> QA["Heuristic QA Validator"]
+    QA --> PolishedOutput["Real-Time Streamed Output"]
+
+    %% Styling
+    classDef default fill:#1f2937,stroke:#374151,stroke-width:1px,color:#f3f4f6;
+    classDef highlight fill:#0369a1,stroke:#0284c7,stroke-width:2px,color:#fff;
+    class FastRouter,Synthesizer highlight;
+```
+
+### Operational Workflow
+1. **Query Routing**: The system routes the user prompt through a custom, fast **Sonar-Large** model. The model converts the prompt into 3-5 search queries in parallel.
+2. **Parallel Retrieval**: Queries are fired against Perplexity’s web index and Bing. The URLs are fetched by high-speed crawling workers written in **Go** (such as Colly) that retrieve raw HTML directly without loading heavy Javascript, minimizing page load times to milliseconds.
+3. **Re-ranking & Caching**: Extracted text is processed via a Cohere Re-ranker, cached in Redis, and presented to a **Claude 3.5 Sonnet** synthesizer.
+4. **Draft & Stream**: The report is generated section-by-section and streamed directly to the UI. If gaps are identified during synthesis, follow-up queries are run concurrently while the current text is streaming.
+
+### Component Stack Analysis
+
+#### LLM Layer
+- *Likely Technologies*: **Sonar-Medium / Sonar-Large** (fine-tuned Llama 3 models for query expansion and fast synthesis) + **Claude 3.5 Sonnet** (for high-end report drafting).
+- *Alternatives*: GPT-4o-mini + GPT-4o.
+- *Chosen Approach Rationale*: Fine-tuned open-source models (Sonar) provide exceptionally low latency for search formulation, while Claude 3.5 Sonnet delivers premium-grade, human-like reports.
+- *Trade-offs*: Requires maintaining a dual-provider API strategy (OpenAI/Anthropic + internal inference endpoints).
+- *Cost Considerations*: Sonar inference is extremely cost-effective (\$1.00/M tokens) compared to proprietary reasoning models, making deep search economically viable.
+- *Scaling Limitations*: Anthropic API rate limits can restrict concurrent drafting under peak traffic.
+
+#### Agent Framework
+- *Likely Technologies*: **Custom event-driven loop written in Go / Node.js**.
+- *Alternatives*: CrewAI, LangGraph.
+- *Chosen Approach Rationale*: High-performance concurrency in Go allows the system to manage 50+ concurrent scrape and parsing jobs with minimal RAM overhead and latency.
+- *Trade-offs*: Lacks the built-in abstract reasoning templates found in Python-based agent libraries.
+- *Cost Considerations*: Go/Node microservices consume far fewer server resources compared to heavy Python runtimes.
+- *Scaling Limitations*: Requires manual state synchronization across microservice clusters.
+
+#### Search Infrastructure
+- *Likely Technologies*: **Perplexity Search Index** + **Bing Web Search API** + **Google Search API fallback**.
+- *Alternatives*: Exa, Tavily.
+- *Chosen Approach Rationale*: Perplexity possesses its own web index and crawler infrastructure, allowing it to bypass external search API fees for common search paths.
+- *Trade-offs*: Maintaining a proprietary web index requires massive, continuous infrastructure investments.
+- *Cost Considerations*: Internal index hits cost \$0.00 in API fees.
+- *Scaling Limitations*: Real-time indexing of breaking news requires massive distributed crawler clusters.
+
+#### Databases & Vector Stores
+- *Likely Technologies*: **Redis** (in-memory caching) + **PostgreSQL** (relational user configurations) + **Milvus** (large-scale embedding index).
+- *Alternatives*: Qdrant, Pinecone.
+- *Chosen Approach Rationale*: Redis cache serves as the fast memory storage for active crawling operations, ensuring the agent does not download the same webpage twice during a session.
+- *Trade-offs*: Redis memory usage can spike under heavy load.
+- *Cost Considerations*: Redis is cost-effective but requires vertical scaling of RAM.
+- *Scaling Limitations*: Milvus indices require sharding and partition pruning to handle millions of active rows.
+
+#### Orchestration Layer
+- *Likely Technologies*: **Celery + Redis** or custom Go task queues.
+- *Alternatives*: Temporal.io, Ray.
+- *Chosen Approach Rationale*: Celery or Go channel queues prioritize immediate message dispatch and execution speed over long-term workflow state persistence.
+- *Trade-offs*: If a worker container crashes, the active execution thread is lost, requiring a manual retry of the search stage.
+- *Cost Considerations*: Extremely low resource costs compared to Temporal's database state tracking.
+- *Scaling Limitations*: Task queue backlogs can cause search latency spikes during peak load.
+
+#### Observability & Evaluation
+- *Likely Technologies*: **Langfuse** (LLM monitoring) + **Datadog** (infrastructure telemetry).
+- *Alternatives*: LangSmith, Arize Phoenix.
+- *Chosen Approach Rationale*: Langfuse offers lightweight integration with Node.js/Go environments and can be self-hosted to comply with data privacy policies.
+- *Trade-offs*: Does not integrate as deeply with Python-specific reasoning tools.
+- *Cost Considerations*: Self-hosted Langfuse costs \$0.00 in SaaS fees.
+- *Scaling Limitations*: High tracing volume requires database scaling for the Langfuse backend.
+
+---
+
+## 12. Gemini Deep Research Stack & Workflow
+
+Gemini Deep Research is designed around Google's native multimodal infrastructure and the massive 2-million-token context window of the Gemini 1.5 Pro architecture. Instead of aggressively chunking documents and retrieving them via vector search (RAG), Gemini Deep Research ingests complete source files, research papers, and crawled webpages directly into the model’s context window.
+
+### Gemini Deep Research Flow Diagram
+
+```mermaid
+graph TD
+    UserQuery["User Research Request"] --> ContextBuilder["Multimodal Context Builder"]
+    UserFiles["User Uploads (PDFs, Images, Video)"] --> ContextBuilder
+    
+    subgraph Context Injection Loop
+        ContextBuilder --> SearchCluster["Google Search API + Web Scrapers"]
+        SearchCluster --> DocumentIngest["Ingestion & Multimodal Normalization"]
+        DocumentIngest --> ContextWindow["Gemini 1.5 Pro Context (up to 2M tokens)"]
+    end
+    
+    subgraph Long-Context Analysis
+        ContextWindow --> Analyzer["Multimodal Reasoner Agent (Gemini 1.5 Pro)"]
+        Analyzer --> FactCheck["Cross-Source Citation Entailment (Gemini 1.5 Flash)"]
+    end
+    
+    Analyzer -- "Missing Data" --> SearchCluster
+    FactCheck --> DraftAssembler["Iterative Draft Builder"]
+    DraftAssembler --> FinalAnswer["Final Interactive Document"]
+
+    %% Styling
+    classDef default fill:#1f2937,stroke:#374151,stroke-width:1px,color:#f3f4f6;
+    classDef highlight fill:#0369a1,stroke:#0284c7,stroke-width:2px,color:#fff;
+    class ContextWindow,Analyzer highlight;
+```
+
+### Operational Workflow
+1. **Multimodal Ingestion**: The user query and uploaded assets (such as Excel sheets, slide decks, diagrams, or even video files) are ingested and converted into multimodal tokens.
+2. **Context-Native Scraping**: Google Search API retrieves high-relevance web results. The system downloads the target pages and directly appends the complete text and page screenshots into the model's active context window, bypassing vector database storage.
+3. **In-Context Analysis**: Gemini 1.5 Pro performs reasoning across the entire context window. It checks for cross-source support, identifies semantic patterns, and builds the report structure directly from the memory buffer.
+4. **Citation Entailment & Compile**: A separate thread running **Gemini 1.5 Flash** verifies that all references are correct, checking citations against the active context. The final formatted report is generated.
+
+### Component Stack Analysis
+
+#### LLM Layer
+- *Likely Technologies*: **Gemini 1.5 Pro** (long-context reasoner) + **Gemini 1.5 Flash** (citation validation and page parser).
+- *Alternatives*: GPT-4o with high-chunk RAG pipelines.
+- *Chosen Approach Rationale*: Gemini's native long-context support eliminates the loss of information common in vector search pipelines. The model evaluates 100% of the retrieved data points in context.
+- *Trade-offs*: Processing 1M+ tokens in a single request leads to higher input latency (time-to-first-token can take 10-30 seconds).
+- *Cost Considerations*: Processing millions of tokens is expensive; Google relies on cached context pricing (\$1.75/M tokens for cached inputs) to keep costs manageable.
+- *Scaling Limitations*: High GPU memory overhead when processing multi-million token context windows.
+
+#### Agent Framework
+- *Likely Technologies*: **Google Custom Agent Engine** (proprietary Java/C++ orchestration framework).
+- *Alternatives*: LlamaIndex workflows.
+- *Chosen Approach Rationale*: Google’s infrastructure requires low-level C++/Java integrations to interact directly with Tensor Processing Unit (TPU) clusters.
+- *Trade-offs*: Less flexible for developers compared to standard Python frameworks.
+- *Cost Considerations*: Custom internal engine eliminates external framework maintenance costs.
+- *Scaling Limitations*: Specialized infrastructure makes it difficult to deploy outside Google Cloud.
+
+#### Search Infrastructure
+- *Likely Technologies*: **Google Search API** (exclusive internal enterprise index).
+- *Alternatives*: Bing Search API, Exa.
+- *Chosen Approach Rationale*: Google Search offers the most accurate, comprehensive, and up-to-date web index globally.
+- *Trade-offs*: Highly locked into Google Cloud Platform (GCP).
+- *Cost Considerations*: Free/internal cost routing for Google, reducing search API fees to near zero.
+- *Scaling Limitations*: Bound by Google Search index update rates.
+
+#### Databases & Vector Stores
+- *Likely Technologies*: **Google Cloud Spanner** (relational state) + **BigTable** (crawled HTML storage) + **Vertex AI Vector Search** (fallback pre-filtering).
+- *Alternatives*: PostgreSQL, MongoDB, Qdrant.
+- *Chosen Approach Rationale*: Cloud Spanner provides global transaction scaling and high availability, ensuring consistent user state across all global regions.
+- *Trade-offs*: Extremely high configuration complexity and licensing costs for non-Google operations.
+- *Cost Considerations*: Highly expensive database setup, suited only for large-scale enterprise deployments.
+- *Scaling Limitations*: Vector searches are rarely a bottleneck because the primary pipeline leverages the context window.
+
+#### Orchestration Layer
+- *Likely Technologies*: **Google Borg** (precursor to Kubernetes) + **Vertex AI Pipelines**.
+- *Alternatives*: Temporal.io, Kubernetes.
+- *Chosen Approach Rationale*: Google’s native cluster manager handles massive scheduling across thousands of TPU/GPU workers.
+- *Trade-offs*: Incompatible with standard cloud container platforms without significant adaptation.
+- *Cost Considerations*: Highly optimized utilization rates on Google-owned hardware.
+- *Scaling Limitations*: Limited to TPU-optimized regions.
+
+#### Observability & Evaluation
+- *Likely Technologies*: **Vertex AI TensorBoard** + **Vertex AI AutoSxS** (automated model evaluation).
+- *Alternatives*: Langfuse, Prometheus.
+- *Chosen Approach Rationale*: AutoSxS provides automated side-by-side model evaluations with built-in statistical confidence scoring.
+- *Trade-offs*: Proprietary models make it difficult to run evaluations locally.
+- *Cost Considerations*: Evaluation requires high token counts, which are handled at internal GCP developer rates.
+- *Scaling Limitations*: AutoSxS judges require GPU resources during model validation phases.
+
+---
+
