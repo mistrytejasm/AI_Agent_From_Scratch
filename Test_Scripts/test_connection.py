@@ -25,7 +25,7 @@ async def test():
     try:
         provider = GroqProvider()
         response = await provider.generate([{"role": "user", "content": "Say: 'API Connection Successful!'"}] )
-        print(f"   -> Groq API Response: '{response.strip()}'")
+        print(f"   -> Groq API Response: '{response['content'].strip()}'")
     except Exception as e:
         print(f"   -> Groq API Connection Failed: {e}")
         

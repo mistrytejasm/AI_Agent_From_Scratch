@@ -88,13 +88,14 @@ async def run_cli():
     short_memory = ShortTermMemory(storage=db_history, max_messages=settings.max_messages)
     groq_llm = GroqProvider()
     
-    if settings.use_local_llm:
-        from llm.local_openai import LocalOpenAIProvider
-        from llm.fallback_provider import FallbackLLMProvider
-        local_llm = LocalOpenAIProvider()
-        llm = FallbackLLMProvider(primary=local_llm, fallback=groq_llm)
-    else:
-        llm = groq_llm
+    # if settings.use_local_llm:
+    #     from llm.local_openai import LocalOpenAIProvider
+    #     from llm.fallback_provider import FallbackLLMProvider
+    #     local_llm = LocalOpenAIProvider()
+    #     llm = FallbackLLMProvider(primary=local_llm, fallback=groq_llm)
+    # else:
+    #     llm = groq_llm
+    llm = groq_llm
         
     agent = SimpleAgent(llm=llm, memory=short_memory)
     consolidator = MemoryConsolidator(llm_provider=llm)
