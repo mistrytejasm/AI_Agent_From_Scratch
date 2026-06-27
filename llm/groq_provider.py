@@ -51,6 +51,21 @@ class GroqProvider(BaseLLM):
                     }
                 } for tc in message.tool_calls
             ]
+
+        # Log and include usage statistics if present
+        if hasattr(response, "usage") and response.usage:
+            usage = response.usage
+            msg_dict["usage"] = {
+                "prompt_tokens": usage.prompt_tokens,
+                "completion_tokens": usage.completion_tokens,
+                "total_tokens": usage.total_tokens
+            }
+            from config.logging_config import logger
+            logger.info(
+                f"[LLM Token Usage] Model: {model} | Prompt Tokens: {usage.prompt_tokens} | "
+                f"Completion Tokens: {usage.completion_tokens} | Total Tokens: {usage.total_tokens}"
+            )
+
         return msg_dict
 
     async def stream(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]] | None = None, **kwargs) -> AsyncGenerator[str, None]:

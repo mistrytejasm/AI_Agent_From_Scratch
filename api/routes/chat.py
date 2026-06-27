@@ -19,13 +19,14 @@ short_memory = ShortTermMemory(storage=db_history, max_messages=settings.max_mes
 groq_llm = GroqProvider()
 
 # Setup primary LLM provider
-if settings.use_local_llm:
-    from llm.local_openai import LocalOpenAIProvider
-    from llm.fallback_provider import FallbackLLMProvider
-    local_llm = LocalOpenAIProvider()
-    llm = FallbackLLMProvider(primary=local_llm, fallback=groq_llm)
-else:
-    llm = groq_llm
+# if settings.use_local_llm:
+#     from llm.local_openai import LocalOpenAIProvider
+#     from llm.fallback_provider import FallbackLLMProvider
+#     local_llm = LocalOpenAIProvider()
+#     llm = FallbackLLMProvider(primary=local_llm, fallback=groq_llm)
+# else:
+#     llm = groq_llm
+llm = groq_llm
 
 agent = SimpleAgent(llm=llm, memory=short_memory)
 
